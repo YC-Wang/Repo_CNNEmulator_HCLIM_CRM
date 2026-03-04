@@ -1,4 +1,4 @@
-# ML Downscaling Emulator: HCLIM-CRM
+# CNN Emulator for HCLIM Convection-permitting Dataset:
 
 This repository contains a Python-based machine learning pipeline for emulating and downscaling climate variables (e.g., `tas`, `pr`) using convolutional neural network (CNN) architectures. 
 It is designed to bridge high-resolution climate model data (HCLIM-CRM) with efficient machine learning emulators.
