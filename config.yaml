@@ -1,0 +1,55 @@
+metadata:
+  dataset_version: "FPS_HCLIM43_ITERIM"
+  preprocessing: "standardized_per_grid"
+  institution: "SMHI"
+  notes: "This is the config for clean repository."
+
+# --- Project Paths ---
+paths:
+  work_dir: "./"
+  data_train_dir: "data_sample/train_data/"
+  data_infer_dir: "data_sample/infer_data/"
+
+# --- Data Selection ---
+experiment:
+  variable: "tas"
+  x_filename: "combined_12km_6hr_20000101-20091231_swapped_2003_2009.nc"
+  y_filename_template: "{variable}_3km_6hr_200001010000-200912311800_swapped_2003_2009.nc"
+  dates:
+    train: ["2000-01-01", "2007-12-31"]
+    val:   ["2008-01-01", "2008-12-31"]
+    test:  ["2009-01-01", "2009-12-31"]
+  downscale_variables: [ 
+    'phi500','phi700','phi850','phi950',
+    'ta500','ta700','ta850','ta950',
+    'ua500','ua700','ua850','ua950',
+    'va500','va700','va850','va950',
+    'hus500','hus700','hus850','hus950',
+    'mrsol'
+  ]
+
+# --- Model Architecture ---
+model:
+  hidden_layer_dense: 256
+  kernel_size: 5
+  layer_filters: [16, 32, 64]
+  dropout: 0.6
+  dense_activation: "selu"
+  cnn_activation: "selu"
+  padding: "valid"
+  use_bn: true        # bn=True
+  use_pooling: true   # pooling=True
+
+# --- Training Hyperparameters ---
+training:
+  learning_rate: 0.0001 # 1e-4
+  batch_size: 64
+  epochs: 300
+  loss: "mse"
+  metrics: "mse"
+  # Base directories for outputs
+  log_root: "../output/logs/"
+  model_root: "../output/models/"
+  # Choose which model to run: "linear" or "cnn"
+  model_type: "cnn"
+  experiment_tag: "test" # Change this for each run

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# Large Artifacts (Project Specific)
+outputs/
+01-model/
+log_dir/
+*.h5
+*.nc
+*.zip
+
+# OS files
+.DS_Store
