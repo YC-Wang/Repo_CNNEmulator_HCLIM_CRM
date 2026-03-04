@@ -9,9 +9,9 @@ env/
 venv/
 
 # Large Artifacts (Project Specific)
-outputs/
-01-model/
-log_dir/
+#outputs/
+#01-model/
+#log_dir/
 *.h5
 *.nc
 *.zip
