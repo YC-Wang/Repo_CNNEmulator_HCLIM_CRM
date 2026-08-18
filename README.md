@@ -1,10 +1,20 @@
-# CNN Emulator for HCLIM Convection-permitting Dataset:
+# CNN Emulator for HCLIM Convection-Permitting Dataset
 
-This repository contains a Python-based machine learning pipeline for emulating and downscaling climate variables (e.g., `tas`, `pr`) using convolutional neural network (CNN) architectures. 
-It is designed to bridge high-resolution climate model data (HCLIM-CRM) with efficient machine learning emulators.
-This is adopted from  and revise to include config utility and reading for HCLIM dataset.
+This repository contains a Python-based machine learning pipeline for emulating and downscaling climate variables (such as `tas` and `pr`) using Convolutional Neural Network (CNN) architectures. It bridges high-resolution climate model data (HCLIM-CRM) with computationally efficient ML emulators.
 
-[Image of machine learning model architecture for climate downscaling]
+## Key Features & Extensions
+
+* **Base Architecture:** Adapted from the deep learning downscaling approach by Rampal et al. (2022).
+* **HCLIM Support:** Extended with dynamic configuration utilities and custom data pipelines tailored for HCLIM dataset ingestion.
+* **Research Context:** Provides the CNN emulator implementation for **Wang et al. (2026)**, submitted to *Artificial Intelligence for the Earth Systems* (AIES).
+
+---
+
+## Reference
+
+* Rampal, N., et al. (2022). High-resolution downscaling with interpretable deep learning: Rainfall extremes over New Zealand. *Weather and Climate Extremes*, 38, 100525. [https://doi.org/10.1016/j.wace.2022.100525](https://doi.org/10.1016/j.wace.2022.100525)
+
+---
 
 ## Project Structure
 
