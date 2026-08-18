@@ -14,6 +14,8 @@ This repository contains a Python-based machine learning pipeline for emulating 
 
 * Rampal, N., et al. (2022). High-resolution downscaling with interpretable deep learning: Rainfall extremes over New Zealand. *Weather and Climate Extremes*, 38, 100525. [https://doi.org/10.1016/j.wace.2022.100525](https://doi.org/10.1016/j.wace.2022.100525)
 
+* Wang, F., Y.-C. Wang, H. E. Kourabbaslou, K. Krus, A. Aldama-Campino, G. Nikulin, R. Döscher, P. Lind, S. Mirjalili, C. Lennard, and F. Schenk, 2026: Emulating land–atmosphere feedbacks in convection-permitting regional climate models using machine learning. Artif. Intell. Earth Syst., submitted.
+
 ---
 
 ## Project Structure
