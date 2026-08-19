@@ -138,3 +138,25 @@ Recommended setup:
 - keep `max-parallel` conservative unless Freja capacity clearly supports more concurrent TensorFlow jobs
 
 If Freja is only reachable through Slurm and cannot host a GitHub runner directly, keep the same matrix layout but replace the training step with an `sbatch` submission wrapper instead of running Python inline.
+
+## Slurm Submission
+
+To submit the current runnable experiments as separate Slurm jobs, use [scripts/submit_all_slurm.sh](/C:/Users/Yi-Chi/Documents/ChatGPT/paper-revision-CNN/scripts/submit_all_slurm.sh:1). Each config is submitted with its own `sbatch` call, so Slurm can place them on different nodes.
+
+Examples:
+
+```bash
+bash scripts/submit_all_slurm.sh
+STAGE=train bash scripts/submit_all_slurm.sh
+STAGE=infer TIME_LIMIT=08:00:00 bash scripts/submit_all_slurm.sh
+ACCOUNT=myproj PARTITION=gpu EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
+```
+
+The script currently submits:
+
+- `configs/pr01.yaml`
+- `configs/pr03.yaml`
+- `configs/pr04.yaml`
+- `configs/pr05.yaml`
+- `configs/pr06.yaml`
+- `configs/pr07.yaml`
