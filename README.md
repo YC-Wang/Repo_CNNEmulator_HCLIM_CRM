@@ -17,6 +17,12 @@ The original project environment is described in [environment.yml](/C:/Users/Yi-
 - `xarray`, `numpy`, `pandas`, `pyyaml`
 - NetCDF IO support through `netcdf4` or `h5netcdf`
 
+On Freja, activate the existing environment first:
+
+```bash
+mamba activate high_res_env
+```
+
 ## Configuration
 
 Use one YAML file for both training and inference. Start from [configs/pr_example.yaml](/C:/Users/Yi-Chi/Documents/ChatGPT/paper-revision-CNN/configs/pr_example.yaml) and copy it to `configs/pr01.yaml` through `configs/pr08.yaml` once the final periods and predictor combinations are defined.
