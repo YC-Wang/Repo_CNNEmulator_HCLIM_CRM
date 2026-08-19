@@ -3,7 +3,7 @@
 set -euo pipefail
 
 STAGE="${STAGE:-all}"
-PARTITION="${PARTITION:-gpu}"
+PARTITION="${PARTITION:-}"
 ACCOUNT="${ACCOUNT:-}"
 TIME_LIMIT="${TIME_LIMIT:-24:00:00}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
@@ -42,9 +42,10 @@ Environment overrides:
   EXTRA_SBATCH_ARGS="--constraint=a100"
 
 Examples:
-  STAGE=train bash scripts/submit_all_slurm.sh
-  STAGE=infer PARTITION=gpu TIME_LIMIT=08:00:00 bash scripts/submit_all_slurm.sh
+  ACCOUNT=my_project STAGE=train bash scripts/submit_all_slurm.sh
+  ACCOUNT=my_project STAGE=infer TIME_LIMIT=08:00:00 bash scripts/submit_all_slurm.sh
   ACCOUNT=my_project EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
+  ACCOUNT=my_project PARTITION=gpu bash scripts/submit_all_slurm.sh
 EOF
 }
 
@@ -77,18 +78,6 @@ for config in "${CONFIGS[@]}"; do
   experiment_id="$(basename "${config}" .yaml)"
   job_script="${LOG_DIR}/${experiment_id}-${STAGE}.sbatch"
 
-  sbatch_args=(
-    --job-name="${experiment_id}-${STAGE}"
-    --output="${LOG_DIR}/${experiment_id}-%j.out"
-  )
-
-  if [[ -n "${EXTRA_SBATCH_ARGS}" ]]; then
-    # Intentionally split here to allow multiple sbatch flags via one env var.
-    # shellcheck disable=SC2206
-    extra_args=( ${EXTRA_SBATCH_ARGS} )
-    sbatch_args+=("${extra_args[@]}")
-  fi
-
   echo "Submitting ${config} as ${experiment_id}-${STAGE}"
 
   cat > "${job_script}" <<EOF
@@ -98,10 +87,15 @@ for config in "${CONFIGS[@]}"; do
 #SBATCH -A ${ACCOUNT}
 #SBATCH -J ${experiment_id}-${STAGE}
 #SBATCH -o ${LOG_DIR}/${experiment_id}-%j.out
-#SBATCH -p ${PARTITION}
 #SBATCH --cpus-per-task=${CPUS_PER_TASK}
 #SBATCH --mem=${MEMORY}
 EOF
+
+  if [[ -n "${PARTITION}" ]]; then
+    cat >> "${job_script}" <<EOF
+#SBATCH -p ${PARTITION}
+EOF
+  fi
 
   if [[ "${GPUS_PER_JOB}" != "0" ]]; then
     cat >> "${job_script}" <<EOF
@@ -129,5 +123,5 @@ python scripts/run_pipeline.py '${config}' --stage '${STAGE}'
 EOF
 
   chmod +x "${job_script}"
-  sbatch "${sbatch_args[@]}" "${job_script}"
+  sbatch "${job_script}"
 done
