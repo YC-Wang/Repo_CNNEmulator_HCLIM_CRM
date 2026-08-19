@@ -1,15 +1,16 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 set -euo pipefail
 
 STAGE="${STAGE:-all}"
 PARTITION="${PARTITION:-gpu}"
-ACCOUNT="${ACCOUNT:-}"
+ACCOUNT="${ACCOUNT:-aspect}"
 TIME_LIMIT="${TIME_LIMIT:-24:00:00}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
 MEMORY="${MEMORY:-64G}"
 GPUS_PER_JOB="${GPUS_PER_JOB:-1}"
 CONDA_ENV="${CONDA_ENV:-high_res_env}"
+MAMBA_MODULE="${MAMBA_MODULE:-Mambaforge/23.3.1-1-hpc1}"
 LOG_DIR="${LOG_DIR:-slurm_logs}"
 EXTRA_SBATCH_ARGS="${EXTRA_SBATCH_ARGS:-}"
 
@@ -30,19 +31,20 @@ Usage:
 Environment overrides:
   STAGE=train|infer|all
   PARTITION=gpu
-  ACCOUNT=my_project
+  ACCOUNT=aspect
   TIME_LIMIT=24:00:00
   CPUS_PER_TASK=8
   MEMORY=64G
   GPUS_PER_JOB=1
   CONDA_ENV=high_res_env
+  MAMBA_MODULE=Mambaforge/23.3.1-1-hpc1
   LOG_DIR=slurm_logs
   EXTRA_SBATCH_ARGS="--constraint=a100"
 
 Examples:
   STAGE=train bash scripts/submit_all_slurm.sh
   STAGE=infer PARTITION=gpu TIME_LIMIT=08:00:00 bash scripts/submit_all_slurm.sh
-  ACCOUNT=myproj EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
+  ACCOUNT=aspect EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
 EOF
 }
 
@@ -67,23 +69,12 @@ done
 
 for config in "${CONFIGS[@]}"; do
   experiment_id="$(basename "${config}" .yaml)"
+  job_script="${LOG_DIR}/${experiment_id}-${STAGE}.sbatch"
 
   sbatch_args=(
     --job-name="${experiment_id}-${STAGE}"
-    --partition="${PARTITION}"
-    --time="${TIME_LIMIT}"
-    --cpus-per-task="${CPUS_PER_TASK}"
-    --mem="${MEMORY}"
     --output="${LOG_DIR}/${experiment_id}-%j.out"
   )
-
-  if [[ -n "${ACCOUNT}" ]]; then
-    sbatch_args+=(--account="${ACCOUNT}")
-  fi
-
-  if [[ "${GPUS_PER_JOB}" != "0" ]]; then
-    sbatch_args+=(--gpus="${GPUS_PER_JOB}")
-  fi
 
   if [[ -n "${EXTRA_SBATCH_ARGS}" ]]; then
     # Intentionally split here to allow multiple sbatch flags via one env var.
@@ -94,11 +85,43 @@ for config in "${CONFIGS[@]}"; do
 
   echo "Submitting ${config} as ${experiment_id}-${STAGE}"
 
-  sbatch "${sbatch_args[@]}" --wrap "
-    set -euo pipefail
-    source ~/.bashrc
-    mamba activate ${CONDA_ENV}
-    cd '$(pwd)'
-    python scripts/run_pipeline.py '${config}' --stage '${STAGE}'
-  "
+  cat > "${job_script}" <<EOF
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -t ${TIME_LIMIT}
+#SBATCH -A ${ACCOUNT}
+#SBATCH -J ${experiment_id}-${STAGE}
+#SBATCH -o ${LOG_DIR}/${experiment_id}-%j.out
+#SBATCH -p ${PARTITION}
+#SBATCH --cpus-per-task=${CPUS_PER_TASK}
+#SBATCH --mem=${MEMORY}
+EOF
+
+  if [[ "${GPUS_PER_JOB}" != "0" ]]; then
+    cat >> "${job_script}" <<EOF
+#SBATCH --gpus=${GPUS_PER_JOB}
+EOF
+  fi
+
+  if [[ -n "${EXTRA_SBATCH_ARGS}" ]]; then
+    for extra_arg in ${EXTRA_SBATCH_ARGS}; do
+      cat >> "${job_script}" <<EOF
+#SBATCH ${extra_arg}
+EOF
+    done
+  fi
+
+  cat >> "${job_script}" <<EOF
+
+set -euo pipefail
+
+module load ${MAMBA_MODULE}
+mamba activate ${CONDA_ENV}
+
+cd '$(pwd)'
+python scripts/run_pipeline.py '${config}' --stage '${STAGE}'
+EOF
+
+  chmod +x "${job_script}"
+  sbatch "${sbatch_args[@]}" "${job_script}"
 done
