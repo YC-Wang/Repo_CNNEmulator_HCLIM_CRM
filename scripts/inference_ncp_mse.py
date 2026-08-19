@@ -161,6 +161,7 @@ def main() -> int:
         timestamps=predictors["time"],
         target_valid_mask=target_valid_mask,
         variable_name=resolved_config["experiment"]["variable"],
+        spatial_reference=target.isel(time=0, drop=True),
     )
 
     saved_output_units = resolved_config["inference"].get("saved_output_units", "scaled")

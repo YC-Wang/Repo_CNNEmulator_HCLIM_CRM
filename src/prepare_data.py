@@ -270,6 +270,7 @@ def reconstruct_grid(
     timestamps: xr.DataArray,
     target_valid_mask: xr.DataArray,
     variable_name: str,
+    spatial_reference: xr.DataArray | None = None,
 ) -> xr.DataArray:
     spatial_dims = get_spatial_dims(target_valid_mask)
     full_shape = (len(timestamps),) + tuple(target_valid_mask.sizes[dim] for dim in spatial_dims)
@@ -289,7 +290,16 @@ def reconstruct_grid(
     stacked = template.stack(z=spatial_dims)
     valid_stack = target_valid_mask.stack(z=spatial_dims)
     stacked.loc[{ "z": valid_stack[valid_stack].z }] = predictions
-    return stacked.unstack("z")
+    reconstructed = stacked.unstack("z")
+
+    if spatial_reference is not None:
+        for coord_name, coord in spatial_reference.coords.items():
+            if coord_name == TIME_DIM:
+                continue
+            if all(dim in reconstructed.dims for dim in coord.dims):
+                reconstructed = reconstructed.assign_coords({coord_name: coord})
+
+    return reconstructed
 
 
 def save_predictor_normalization(

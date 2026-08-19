@@ -37,10 +37,20 @@ def build_target_array(values: np.ndarray) -> xr.DataArray:
         ],
         dtype="datetime64[ns]",
     )
+    lat = xr.DataArray(
+        np.array([[44.0, 44.1], [44.2, 44.3]]),
+        dims=("y", "x"),
+        coords={"y": [0, 1], "x": [0, 1]},
+    )
+    lon = xr.DataArray(
+        np.array([[11.0, 11.1], [11.2, 11.3]]),
+        dims=("y", "x"),
+        coords={"y": [0, 1], "x": [0, 1]},
+    )
     return xr.DataArray(
         values,
         dims=("time", "y", "x"),
-        coords={"time": times, "y": [0, 1], "x": [0, 1]},
+        coords={"time": times, "y": [0, 1], "x": [0, 1], "lat": lat, "lon": lon},
         name="pr",
         attrs={"units": "kg m-2 s-1"},
     )
@@ -182,12 +192,17 @@ class PrepareDataTests(unittest.TestCase):
             timestamps=self.y_val["time"],
             target_valid_mask=target_valid_mask,
             variable_name="pr",
+            spatial_reference=self.y_val.isel(time=0, drop=True),
         )
 
         self.assertEqual(prediction.sel(time=self.y_val.time[0], y=0, x=0).item(), 100.0)
         self.assertEqual(prediction.sel(time=self.y_val.time[0], y=0, x=1).item(), 200.0)
         self.assertTrue(np.isnan(prediction.sel(time=self.y_val.time[0], y=1, x=0).item()))
         self.assertEqual(prediction.sel(time=self.y_val.time[0], y=1, x=1).item(), 300.0)
+        self.assertIn("lat", prediction.coords)
+        self.assertIn("lon", prediction.coords)
+        self.assertEqual(prediction["lat"].sel(y=0, x=0).item(), 44.0)
+        self.assertEqual(prediction["lon"].sel(y=1, x=1).item(), 11.3)
 
     def test_artifacts_can_be_saved_and_loaded(self) -> None:
         predictor_mean, predictor_std, predictor_std_safe, _, _ = compute_training_stats(self.x_train, 1.0e-6)
