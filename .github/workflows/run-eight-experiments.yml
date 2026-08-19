@@ -27,18 +27,16 @@ jobs:
         include:
           - experiment_id: ERAI-HI2HI
             config: configs/pr01.yaml
-          - experiment_id: pr03
+          - experiment_id: ECE-HI2HI
             config: configs/pr03.yaml
-          - experiment_id: pr04
+          - experiment_id: ECE-HI2MC
             config: configs/pr04.yaml
-          - experiment_id: pr05
+          - experiment_id: ECE-MC2MC
             config: configs/pr05.yaml
-          - experiment_id: pr06
+          - experiment_id: ECE-MC2HI
             config: configs/pr06.yaml
-          - experiment_id: pr07
+          - experiment_id: ECE-HM2HM
             config: configs/pr07.yaml
-          - experiment_id: pr08
-            config: configs/pr08.yaml
 
     defaults:
       run:
