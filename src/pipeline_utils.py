@@ -24,7 +24,23 @@ def resolve_config_paths(config: dict[str, Any], config_file: Path) -> dict[str,
     base_dir = config_file.parent
     paths = resolved["paths"]
     for key in ("predictor_file", "target_file", "output_root"):
-        paths[key] = str((base_dir / paths[key]).resolve())
+        if key in paths:
+            paths[key] = str((base_dir / paths[key]).resolve())
+
+    for segment in resolved.get("training", {}).get("segments", []):
+        for key in ("predictor_file", "target_file"):
+            if key in segment:
+                segment[key] = str((base_dir / segment[key]).resolve())
+
+    for segment in resolved.get("training", {}).get("validation_segments", []):
+        for key in ("predictor_file", "target_file"):
+            if key in segment:
+                segment[key] = str((base_dir / segment[key]).resolve())
+
+    for run in resolved.get("inference", {}).get("runs", []):
+        for key in ("predictor_file", "target_file"):
+            if key in run:
+                run[key] = str((base_dir / run[key]).resolve())
     return resolved
 
 
@@ -76,3 +92,18 @@ def get_inference_dates(config: dict[str, Any]) -> list[str]:
     if inference_dates:
         return inference_dates
     return config["experiment"]["dates"]["test"]
+
+
+def get_inference_runs(config: dict[str, Any]) -> list[dict[str, Any]]:
+    runs = config.get("inference", {}).get("runs")
+    if runs:
+        return runs
+
+    return [
+        {
+            "name": "default",
+            "predictor_file": config["paths"]["predictor_file"],
+            "target_file": config["paths"]["target_file"],
+            "dates": get_inference_dates(config),
+        }
+    ]

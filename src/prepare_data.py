@@ -181,6 +181,80 @@ def split_aligned_data(
     )
 
 
+def slice_aligned_data(
+    predictors: xr.Dataset,
+    target: xr.DataArray,
+    date_range: list[str],
+    label: str,
+) -> tuple[xr.Dataset, xr.DataArray]:
+    start, end = date_range
+    x_part = predictors.sel({TIME_DIM: slice(start, end)})
+    y_part = target.sel({TIME_DIM: slice(start, end)})
+    if x_part.sizes.get(TIME_DIM, 0) == 0 or y_part.sizes.get(TIME_DIM, 0) == 0:
+        raise ValueError(f"The configured {label} period {start} to {end} is empty.")
+    if x_part.sizes[TIME_DIM] != y_part.sizes[TIME_DIM]:
+        raise ValueError(f"Predictor/target mismatch inside the {label} split.")
+    return x_part, y_part
+
+
+def concatenate_time_segments(
+    x_segments: list[xr.Dataset],
+    y_segments: list[xr.DataArray],
+    label: str,
+) -> tuple[xr.Dataset, xr.DataArray]:
+    if not x_segments or not y_segments:
+        raise ValueError(f"No {label} segments were provided.")
+
+    with ProgressBar():
+        x_loaded = [segment.load() for segment in x_segments]
+        y_loaded = [segment.load() for segment in y_segments]
+
+    predictors = xr.concat(x_loaded, dim=TIME_DIM)
+    target = xr.concat(y_loaded, dim=TIME_DIM)
+
+    time_index = pd.DatetimeIndex(pd.to_datetime(predictors[TIME_DIM].values))
+    if time_index.has_duplicates:
+        duplicates = time_index[time_index.duplicated()].unique().tolist()
+        raise ValueError(f"{label} segments contain duplicate timestamps: {duplicates[:5]}")
+
+    predictors = predictors.assign_coords({TIME_DIM: time_index})
+    target = target.assign_coords({TIME_DIM: time_index})
+
+    print(f"{label} sample count after concatenation: {predictors.sizes[TIME_DIM]}")
+    return predictors, target
+
+
+def load_segmented_split(
+    segments: list[dict],
+    predictor_variables: list[str],
+    target_variable: str,
+    predictor_time_offset_hours: int,
+    label: str,
+) -> tuple[xr.Dataset, xr.DataArray]:
+    x_segments: list[xr.Dataset] = []
+    y_segments: list[xr.DataArray] = []
+
+    for index, segment in enumerate(segments, start=1):
+        segment_label = segment.get("name", f"{label}-{index}")
+        predictors, target = align_predictors_and_target(
+            predictor_file=Path(segment["predictor_file"]),
+            target_file=Path(segment["target_file"]),
+            predictor_variables=predictor_variables,
+            target_variable=target_variable,
+            predictor_time_offset_hours=predictor_time_offset_hours,
+        )
+        x_part, y_part = slice_aligned_data(
+            predictors,
+            target,
+            segment["dates"],
+            f"{label} segment {segment_label}",
+        )
+        x_segments.append(x_part)
+        y_segments.append(y_part)
+
+    return concatenate_time_segments(x_segments, y_segments, label)
+
+
 def compute_training_stats(
     data: xr.Dataset | xr.DataArray,
     std_epsilon: float,
@@ -384,3 +458,31 @@ def create_test_train_split(config: dict) -> tuple[xr.Dataset, xr.Dataset, xr.Da
         "test": [config["test_start"], config["test_end"]],
     }
     return split_aligned_data(predictors, target, dates)
+
+
+def create_training_split_from_segments(
+    train_segments: list[dict],
+    predictor_variables: list[str],
+    target_variable: str,
+    predictor_time_offset_hours: int,
+    validation_segments: list[dict] | None = None,
+) -> tuple[xr.Dataset, xr.Dataset | None, xr.DataArray, xr.DataArray | None]:
+    x_train, y_train = load_segmented_split(
+        segments=train_segments,
+        predictor_variables=predictor_variables,
+        target_variable=target_variable,
+        predictor_time_offset_hours=predictor_time_offset_hours,
+        label="train",
+    )
+
+    if validation_segments:
+        x_val, y_val = load_segmented_split(
+            segments=validation_segments,
+            predictor_variables=predictor_variables,
+            target_variable=target_variable,
+            predictor_time_offset_hours=predictor_time_offset_hours,
+            label="validation",
+        )
+        return x_train, x_val, y_train, y_val
+
+    return x_train, None, y_train, None

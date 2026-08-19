@@ -29,7 +29,9 @@ from pipeline_utils import (
 )
 from prepare_data import (
     compute_training_stats,
+    create_training_split_from_segments,
     create_test_train_split,
+    load_segmented_split,
     normalize_with_training_stats,
     prepare_training_dataset,
     save_predictor_normalization,
@@ -54,6 +56,26 @@ def _working_units(config: dict, source_units: str | None) -> str:
     return source_units or "unspecified"
 
 
+def _build_default_split_config(config: dict, predictor_file: Path, target_file: Path, variable: str) -> dict:
+    return {
+        "X": str(predictor_file),
+        "y": str(target_file),
+        "train_start": config["experiment"]["dates"]["train"][0],
+        "train_end": config["experiment"]["dates"]["train"][1],
+        "val_start": config["experiment"]["dates"]["val"][0],
+        "val_end": config["experiment"]["dates"]["val"][1],
+        "test_start": config["experiment"]["dates"]["test"][0],
+        "test_end": config["experiment"]["dates"]["test"][1],
+        "output_var": [variable],
+        "downscale_variables": config["experiment"]["downscale_variables"],
+        "predictor_time_offset_hours": config["experiment"]["predictor_time_offset_hours"],
+    }
+
+
+def _empty_like_time(data):
+    return data.isel(time=slice(0, 0))
+
+
 def main() -> int:
     args = parse_args()
     raw_config, config_path = load_yaml_config(args.config_file)
@@ -72,21 +94,24 @@ def main() -> int:
     print(f"Predictor file: {predictor_file}")
     print(f"Target file: {target_file}")
 
-    split_config = {
-        "X": str(predictor_file),
-        "y": str(target_file),
-        "train_start": config["experiment"]["dates"]["train"][0],
-        "train_end": config["experiment"]["dates"]["train"][1],
-        "val_start": config["experiment"]["dates"]["val"][0],
-        "val_end": config["experiment"]["dates"]["val"][1],
-        "test_start": config["experiment"]["dates"]["test"][0],
-        "test_end": config["experiment"]["dates"]["test"][1],
-        "output_var": [variable],
-        "downscale_variables": config["experiment"]["downscale_variables"],
-        "predictor_time_offset_hours": config["experiment"]["predictor_time_offset_hours"],
-    }
+    training_segments = config.get("training", {}).get("segments")
+    validation_segments = config.get("training", {}).get("validation_segments")
+    uses_segmented_training = bool(training_segments)
+    sequential_training = bool(config.get("training", {}).get("sequential_segments", False))
 
-    x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(split_config)
+    if uses_segmented_training:
+        x_train, x_val, y_train, y_val = create_training_split_from_segments(
+            train_segments=training_segments,
+            predictor_variables=config["experiment"]["downscale_variables"],
+            target_variable=variable,
+            predictor_time_offset_hours=config["experiment"]["predictor_time_offset_hours"],
+            validation_segments=validation_segments,
+        )
+        x_test = None
+        y_test = None
+    else:
+        split_config = _build_default_split_config(config, predictor_file, target_file, variable)
+        x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(split_config)
 
     source_units = y_train.attrs.get("units")
     target_scale = float(config["experiment"]["target_scale"])
@@ -96,8 +121,8 @@ def main() -> int:
     print(f"Working target units: {working_units}")
 
     y_train_scaled = y_train * target_scale
-    y_val_scaled = y_val * target_scale
-    y_test_scaled = y_test * target_scale
+    y_val_scaled = y_val * target_scale if y_val is not None else None
+    y_test_scaled = y_test * target_scale if y_test is not None else None
 
     std_epsilon = float(config["experiment"]["std_epsilon"])
     predictor_mean, predictor_std, predictor_std_safe, predictor_valid_mask, predictor_zero_std_mask = compute_training_stats(
@@ -122,11 +147,11 @@ def main() -> int:
 
     x_train_ready, x_val_ready, x_test_ready, y_train_ready, y_val_ready, y_test_ready = prepare_training_dataset(
         x_train=x_train,
-        x_val=x_val,
-        x_test=x_test,
+        x_val=x_val if x_val is not None else x_train.isel(time=slice(0, 0)),
+        x_test=x_test if x_test is not None else x_train.isel(time=slice(0, 0)),
         y_train=y_train_scaled,
-        y_val=y_val_scaled,
-        y_test=y_test_scaled,
+        y_val=y_val_scaled if y_val_scaled is not None else y_train_scaled.isel(time=slice(0, 0)),
+        y_test=y_test_scaled if y_test_scaled is not None else y_train_scaled.isel(time=slice(0, 0)),
         predictor_mean=predictor_mean,
         predictor_std_safe=predictor_std_safe,
         target_mean=target_mean,
@@ -135,18 +160,15 @@ def main() -> int:
         variable_order=config["experiment"]["downscale_variables"],
     )
 
-    validate_prepared_arrays(
-        {
-            "train": x_train_ready,
-            "val": x_val_ready,
-            "test": x_test_ready,
-        },
-        {
-            "train": y_train_ready,
-            "val": y_val_ready,
-            "test": y_test_ready,
-        },
-    )
+    x_arrays = {"train": x_train_ready}
+    y_arrays = {"train": y_train_ready}
+    if x_val is not None and y_val is not None:
+        x_arrays["val"] = x_val_ready
+        y_arrays["val"] = y_val_ready
+    if x_test is not None and y_test is not None:
+        x_arrays["test"] = x_test_ready
+        y_arrays["test"] = y_test_ready
+    validate_prepared_arrays(x_arrays, y_arrays)
 
     resolved_config = json.loads(json.dumps(config))
     resolved_config["metadata"]["source_units"] = source_units
@@ -156,6 +178,8 @@ def main() -> int:
     resolved_config["metadata"]["target_spatial_dims"] = list(target_valid_mask.dims)
     resolved_config["metadata"]["target_masks_saved"] = True
     resolved_config["metadata"]["predictor_stats_saved"] = True
+    resolved_config["metadata"]["uses_segmented_training"] = uses_segmented_training
+    resolved_config["metadata"]["sequential_training_segments"] = sequential_training
     resolved_config["paths"]["experiment_dir"] = str(experiment_dir)
     resolved_config["artifacts"] = {
         "model": "model.h5",
@@ -198,22 +222,78 @@ def main() -> int:
         activation=config["model"]["cnn_activation"],
     )
 
-    history, _ = train_model(
-        model=model,
-        x_train=x_train_ready.values,
-        y_train=y_train_ready.values,
-        x_val=x_val_ready.values,
-        y_val=y_val_ready.values,
-        loss=config["training"]["loss"],
-        model_weights_name=str(experiment_dir / "model.h5"),
-        logdir=str(output_dirs["logs"]),
-        epochs=config["training"]["epochs"],
-        batch_size=config["training"]["batch_size"],
-        optimizer=Adam(learning_rate=float(config["training"]["learning_rate"])),
-        metrics=[config["training"]["metrics"]],
-    )
+    history_frames: list[pd.DataFrame] = []
+    if uses_segmented_training and sequential_training:
+        if x_val is not None and y_val is not None:
+            x_val_values = x_val_ready.values
+            y_val_values = y_val_ready.values
+        else:
+            x_val_values = None
+            y_val_values = None
 
-    pd.DataFrame(history.history).to_csv(experiment_dir / "history.csv", index=False)
+        for phase_index, segment in enumerate(training_segments, start=1):
+            phase_name = segment.get("name", f"segment_{phase_index}")
+            print(f"Sequential training phase {phase_index}: {phase_name}")
+            x_phase, y_phase = load_segmented_split(
+                segments=[segment],
+                predictor_variables=config["experiment"]["downscale_variables"],
+                target_variable=variable,
+                predictor_time_offset_hours=config["experiment"]["predictor_time_offset_hours"],
+                label=f"train-phase-{phase_name}",
+            )
+            x_phase_ready, _, _, y_phase_ready, _, _ = prepare_training_dataset(
+                x_train=x_phase,
+                x_val=_empty_like_time(x_phase),
+                x_test=_empty_like_time(x_phase),
+                y_train=y_phase * target_scale,
+                y_val=_empty_like_time(y_phase),
+                y_test=_empty_like_time(y_phase),
+                predictor_mean=predictor_mean,
+                predictor_std_safe=predictor_std_safe,
+                target_mean=target_mean,
+                target_std_safe=target_std_safe,
+                target_valid_mask=target_valid_mask,
+                variable_order=config["experiment"]["downscale_variables"],
+            )
+            history, _ = train_model(
+                model=model,
+                x_train=x_phase_ready.values,
+                y_train=y_phase_ready.values,
+                x_val=x_val_values,
+                y_val=y_val_values,
+                loss=config["training"]["loss"],
+                model_weights_name=str(experiment_dir / "model.h5"),
+                logdir=str(output_dirs["logs"] / f"phase_{phase_index:02d}_{phase_name}"),
+                epochs=config["training"]["epochs"],
+                batch_size=config["training"]["batch_size"],
+                optimizer=Adam(learning_rate=float(config["training"]["learning_rate"])),
+                metrics=[config["training"]["metrics"]],
+            )
+            history_df = pd.DataFrame(history.history)
+            history_df.insert(0, "phase_name", phase_name)
+            history_df.insert(0, "phase_index", phase_index)
+            history_frames.append(history_df)
+    else:
+        history, _ = train_model(
+            model=model,
+            x_train=x_train_ready.values,
+            y_train=y_train_ready.values,
+            x_val=x_val_ready.values if x_val is not None and y_val is not None else None,
+            y_val=y_val_ready.values if x_val is not None and y_val is not None else None,
+            loss=config["training"]["loss"],
+            model_weights_name=str(experiment_dir / "model.h5"),
+            logdir=str(output_dirs["logs"]),
+            epochs=config["training"]["epochs"],
+            batch_size=config["training"]["batch_size"],
+            optimizer=Adam(learning_rate=float(config["training"]["learning_rate"])),
+            metrics=[config["training"]["metrics"]],
+        )
+        history_df = pd.DataFrame(history.history)
+        history_df.insert(0, "phase_name", "combined")
+        history_df.insert(0, "phase_index", 1)
+        history_frames.append(history_df)
+
+    pd.concat(history_frames, ignore_index=True).to_csv(experiment_dir / "history.csv", index=False)
     print(f"Training artifacts saved under {experiment_dir}")
     return 0
 

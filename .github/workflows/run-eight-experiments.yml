@@ -1,0 +1,68 @@
+name: Run Eight Experiments
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "Pipeline stage to run"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - train
+          - infer
+          - all
+
+jobs:
+  run-experiment:
+    name: ${{ matrix.experiment_id }}
+    runs-on:
+      - self-hosted
+      - linux
+      - freja
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - experiment_id: ERAI-HI2HI
+            config: configs/pr01.yaml
+          - experiment_id: pr03
+            config: configs/pr03.yaml
+          - experiment_id: pr04
+            config: configs/pr04.yaml
+          - experiment_id: pr05
+            config: configs/pr05.yaml
+          - experiment_id: pr06
+            config: configs/pr06.yaml
+          - experiment_id: pr07
+            config: configs/pr07.yaml
+          - experiment_id: pr08
+            config: configs/pr08.yaml
+
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify config exists
+        run: test -f "${{ matrix.config }}"
+
+      - name: Run experiment pipeline
+        run: |
+          mamba activate high_res_env
+          python scripts/run_pipeline.py "${{ matrix.config }}" --stage "${{ inputs.stage }}"
+
+      - name: Upload small text artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.experiment_id }}-logs
+          path: |
+            outputs/${{ matrix.experiment_id }}/history.csv
+            outputs/${{ matrix.experiment_id }}/metrics.csv
+            outputs/${{ matrix.experiment_id }}/config_resolved.yaml
+          if-no-files-found: ignore

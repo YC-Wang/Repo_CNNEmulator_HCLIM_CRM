@@ -124,3 +124,17 @@ Before launching the final `pr01` to `pr08` configurations on Freja, verify:
 - aligned timestamps match the intended rainfall semantics after the configurable `+3 hour` shift
 - TensorFlow and any required GPU or CUDA stack are available in the Freja runtime
 - the full HCLIM datasets fit the expected predictor and target spatial dimensions
+
+## GitHub Actions For Eight Experiments
+
+The repository includes a sample matrix workflow at [.github/workflows/run-eight-experiments.yml](/C:/Users/Yi-Chi/Documents/ChatGPT/paper-revision-CNN/.github/workflows/run-eight-experiments.yml). It is designed for a self-hosted runner on the same environment that can access the existing `/nobackup/...` predictor and target files.
+
+Recommended setup:
+
+- map each table row to one config file: `configs/pr01.yaml` through `configs/pr08.yaml`
+- set `metadata.experiment_id` in each file to a stable output directory name
+- keep the workflow as a thin orchestrator and let `scripts/run_pipeline.py` remain the single training and inference entrypoint
+- use `workflow_dispatch` so you can rerun `train`, `infer`, or `all` without editing the workflow
+- keep `max-parallel` conservative unless Freja capacity clearly supports more concurrent TensorFlow jobs
+
+If Freja is only reachable through Slurm and cannot host a GitHub runner directly, keep the same matrix layout but replace the training step with an `sbatch` submission wrapper instead of running Python inline.

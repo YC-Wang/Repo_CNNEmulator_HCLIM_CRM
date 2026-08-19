@@ -17,6 +17,7 @@ if str(SRC_DIR) not in sys.path:
 from prepare_data import (
     align_predictors_and_target,
     compute_training_stats,
+    create_training_split_from_segments,
     load_predictor_normalization,
     load_target_normalization,
     normalize_with_training_stats,
@@ -324,6 +325,85 @@ class PrepareDataTests(unittest.TestCase):
                 109.0,
             )
         )
+
+    def test_segmented_training_split_concatenates_non_contiguous_windows(self) -> None:
+        predictor_hist = build_predictor_dataset(
+            a_values=np.ones((4, 2, 2)),
+            b_values=np.ones((4, 2, 2)) * 10.0,
+        )
+        target_hist = build_target_array(np.ones((4, 2, 2)) * 2.0)
+
+        predictor_mid = build_predictor_dataset(
+            a_values=np.ones((4, 2, 2)) * 3.0,
+            b_values=np.ones((4, 2, 2)) * 30.0,
+        ).assign_coords(
+            time=np.array(
+                [
+                    "2050-01-01T00:00:00",
+                    "2050-01-02T00:00:00",
+                    "2050-01-03T00:00:00",
+                    "2050-01-04T00:00:00",
+                ],
+                dtype="datetime64[ns]",
+            )
+        )
+        target_mid = build_target_array(np.ones((4, 2, 2)) * 4.0).assign_coords(
+            time=np.array(
+                [
+                    "2050-01-01T03:00:00",
+                    "2050-01-02T03:00:00",
+                    "2050-01-03T03:00:00",
+                    "2050-01-04T03:00:00",
+                ],
+                dtype="datetime64[ns]",
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            predictor_hist_file = Path(tmpdir) / "predictor_hist.nc"
+            target_hist_file = Path(tmpdir) / "target_hist.nc"
+            predictor_mid_file = Path(tmpdir) / "predictor_mid.nc"
+            target_mid_file = Path(tmpdir) / "target_mid.nc"
+
+            predictor_hist.to_netcdf(predictor_hist_file)
+            target_hist.to_dataset(name="pr").to_netcdf(target_hist_file)
+            predictor_mid.to_netcdf(predictor_mid_file)
+            target_mid.to_dataset(name="pr").to_netcdf(target_mid_file)
+
+            x_train, x_val, y_train, y_val = create_training_split_from_segments(
+                train_segments=[
+                    {
+                        "name": "hist",
+                        "predictor_file": str(predictor_hist_file),
+                        "target_file": str(target_hist_file),
+                        "dates": ["2000-01-01", "2000-01-02"],
+                    },
+                    {
+                        "name": "mid",
+                        "predictor_file": str(predictor_mid_file),
+                        "target_file": str(target_mid_file),
+                        "dates": ["2050-01-03", "2050-01-04"],
+                    },
+                ],
+                validation_segments=[
+                    {
+                        "name": "holdout",
+                        "predictor_file": str(predictor_hist_file),
+                        "target_file": str(target_hist_file),
+                        "dates": ["2000-01-03", "2000-01-04"],
+                    }
+                ],
+                predictor_variables=["var_b", "var_a"],
+                target_variable="pr",
+                predictor_time_offset_hours=3,
+            )
+
+        self.assertEqual(x_train.sizes["time"], 4)
+        self.assertEqual(y_train.sizes["time"], 4)
+        self.assertEqual(x_val.sizes["time"], 2)
+        self.assertEqual(y_val.sizes["time"], 2)
+        self.assertEqual(str(x_train.time.values[0]), "2000-01-01T03:00:00.000000000")
+        self.assertEqual(str(x_train.time.values[-1]), "2050-01-04T03:00:00.000000000")
 
 
 if __name__ == "__main__":

@@ -30,16 +30,18 @@ def train_model(model, x_train, y_train, x_val, y_val, loss, model_weights_name,
     model.compile(loss=loss, optimizer=optimizer, metrics=metrics)
     model.summary()
     
+    monitor_metric = 'val_loss' if x_val is not None and y_val is not None else 'loss'
+
     model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=model_weights_name,
         save_weights_only=False,
-        monitor='val_loss',
+        monitor=monitor_metric,
         mode='min',
         save_best_only=True
     )
     
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss',
+        monitor=monitor_metric,
         factor=0.2,
         patience=3,
         verbose=0,
@@ -50,7 +52,7 @@ def train_model(model, x_train, y_train, x_val, y_val, loss, model_weights_name,
     )
     
     early_stopping = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss',
+        monitor=monitor_metric,
     #    patience=5
        patience=30
     )
@@ -61,8 +63,16 @@ def train_model(model, x_train, y_train, x_val, y_val, loss, model_weights_name,
 
     #history = model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=epochs, batch_size=batch_size,
     #callbacks=[reduce_lr, model_checkpoint_callback, early_stopping], shuffle=True)
-    history = model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=epochs, batch_size=batch_size,
-            callbacks=[reduce_lr, model_checkpoint_callback, early_stopping, tb_callback], shuffle=True)
+    fit_kwargs = {
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "callbacks": [reduce_lr, model_checkpoint_callback, early_stopping, tb_callback],
+        "shuffle": True,
+    }
+    if x_val is not None and y_val is not None:
+        fit_kwargs["validation_data"] = (x_val, y_val)
+
+    history = model.fit(x_train, y_train, **fit_kwargs)
     # ---
     return history, model
 

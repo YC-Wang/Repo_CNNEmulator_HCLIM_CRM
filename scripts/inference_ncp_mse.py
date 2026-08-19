@@ -18,7 +18,7 @@ if str(SRC_DIR) not in sys.path:
 
 from pipeline_utils import (
     get_experiment_dir,
-    get_inference_dates,
+    get_inference_runs,
     load_yaml_config,
     read_resolved_config,
     resolve_config_paths,
@@ -81,41 +81,32 @@ def _verify_saved_time(output_file: Path, in_memory: xr.DataArray, evaluation_ta
         raise ValueError("Saved prediction timestamps do not match evaluation target timestamps.")
 
 
-def main() -> int:
-    args = parse_args()
-    raw_config, config_path = load_yaml_config(args.config_file)
-    config = resolve_config_paths(raw_config, config_path)
-    experiment_dir = get_experiment_dir(config)
-    resolved_config = read_resolved_config(experiment_dir)
-
-    predictor_mean, predictor_std, predictor_std_safe, predictor_order = load_predictor_normalization(
-        experiment_dir / "normalization"
-    )
-    target_mean, target_std, target_std_safe, target_valid_mask, target_zero_std_mask = load_target_normalization(
-        experiment_dir / "normalization"
-    )
-
-    inference_dates = get_inference_dates(resolved_config)
-    requested_config = {
-        "predictor_file": Path(resolved_config["paths"]["predictor_file"]),
-        "target_file": Path(resolved_config["paths"]["target_file"]),
-        "variable": resolved_config["experiment"]["variable"],
-        "predictor_time_offset_hours": resolved_config["experiment"]["predictor_time_offset_hours"],
-    }
-
+def _run_single_inference(
+    experiment_dir: Path,
+    resolved_config: dict,
+    predictor_mean: xr.Dataset,
+    predictor_std_safe: xr.Dataset,
+    predictor_order: list[str],
+    target_mean: xr.DataArray,
+    target_std_safe: xr.DataArray,
+    target_valid_mask: xr.DataArray,
+    run_config: dict,
+    output_file: Path,
+    metrics_file: Path | None,
+) -> None:
     predictors, target = align_predictors_and_target(
-        predictor_file=requested_config["predictor_file"],
-        target_file=requested_config["target_file"],
+        predictor_file=Path(run_config["predictor_file"]),
+        target_file=Path(run_config["target_file"]),
         predictor_variables=predictor_order,
-        target_variable=requested_config["variable"],
-        predictor_time_offset_hours=requested_config["predictor_time_offset_hours"],
+        target_variable=resolved_config["experiment"]["variable"],
+        predictor_time_offset_hours=resolved_config["experiment"]["predictor_time_offset_hours"],
     )
-    predictors = predictors.sel(time=slice(inference_dates[0], inference_dates[1])).load()
-    target = target.sel(time=slice(inference_dates[0], inference_dates[1])).load()
+    predictors = predictors.sel(time=slice(run_config["dates"][0], run_config["dates"][1])).load()
+    target = target.sel(time=slice(run_config["dates"][0], run_config["dates"][1])).load()
     if predictors.sizes["time"] == 0:
-        raise ValueError("The configured inference period is empty after alignment.")
+        raise ValueError(f"Inference period '{run_config['name']}' is empty after alignment.")
     if predictors.sizes["time"] != target.sizes["time"]:
-        raise ValueError("Inference predictor and target counts differ after alignment.")
+        raise ValueError(f"Inference predictor and target counts differ after alignment for run '{run_config['name']}'.")
 
     for variable_name in predictor_order:
         if variable_name not in predictors.data_vars:
@@ -191,25 +182,69 @@ def main() -> int:
     prediction.attrs["timestamp_convention"] = target.attrs.get("timestamp_convention", "")
     prediction.attrs["model_checkpoint"] = str(experiment_dir / "model.h5")
     prediction.attrs["experiment_id"] = resolved_config["metadata"]["experiment_id"]
+    prediction.attrs["inference_run_name"] = run_config["name"]
     prediction.attrs["predictor_list"] = ",".join(predictor_order)
     prediction.attrs["git_commit_sha"] = resolved_config["metadata"].get("git_commit_sha", "")
     prediction.attrs["negative_rainfall_clipping_applied"] = int(clip_negative)
     prediction.name = resolved_config["experiment"]["variable"]
 
-    output_file = experiment_dir / "prediction.nc"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     prediction.to_dataset(name=prediction.name).to_netcdf(output_file)
 
     evaluation_target = None
-    if resolved_config["inference"].get("calculate_test_metrics", False):
+    if resolved_config["inference"].get("calculate_test_metrics", False) and metrics_file is not None:
         target_scale = float(resolved_config["experiment"]["target_scale"])
         if saved_output_units == "scaled":
             evaluation_target = target * target_scale
         else:
             evaluation_target = target
         metrics_df = _compute_metrics(evaluation_target, prediction)
-        metrics_df.to_csv(experiment_dir / "metrics.csv", index=False)
+        metrics_file.parent.mkdir(parents=True, exist_ok=True)
+        metrics_df.to_csv(metrics_file, index=False)
 
     _verify_saved_time(output_file, prediction, evaluation_target)
+
+
+def main() -> int:
+    args = parse_args()
+    raw_config, config_path = load_yaml_config(args.config_file)
+    config = resolve_config_paths(raw_config, config_path)
+    experiment_dir = get_experiment_dir(config)
+    resolved_config = read_resolved_config(experiment_dir)
+
+    predictor_mean, predictor_std, predictor_std_safe, predictor_order = load_predictor_normalization(
+        experiment_dir / "normalization"
+    )
+    target_mean, target_std, target_std_safe, target_valid_mask, target_zero_std_mask = load_target_normalization(
+        experiment_dir / "normalization"
+    )
+
+    inference_runs = get_inference_runs(resolved_config)
+    multi_run_mode = len(inference_runs) > 1 or resolved_config.get("inference", {}).get("runs")
+
+    for run_config in inference_runs:
+        run_name = run_config["name"]
+        print(f"Running inference target: {run_name}")
+        if multi_run_mode:
+            output_file = experiment_dir / "inference_runs" / run_name / "prediction.nc"
+            metrics_file = experiment_dir / "inference_runs" / run_name / "metrics.csv"
+        else:
+            output_file = experiment_dir / "prediction.nc"
+            metrics_file = experiment_dir / "metrics.csv"
+
+        _run_single_inference(
+            experiment_dir=experiment_dir,
+            resolved_config=resolved_config,
+            predictor_mean=predictor_mean,
+            predictor_std_safe=predictor_std_safe,
+            predictor_order=predictor_order,
+            target_mean=target_mean,
+            target_std_safe=target_std_safe,
+            target_valid_mask=target_valid_mask,
+            run_config=run_config,
+            output_file=output_file,
+            metrics_file=metrics_file,
+        )
 
     print(f"Inference artifacts saved under {experiment_dir}")
     return 0
