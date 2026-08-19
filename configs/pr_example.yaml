@@ -4,9 +4,9 @@ metadata:
   notes: "Standardized precipitation CNN with MSE"
 
 paths:
-  predictor_file: "./data_sample/train_data/combined_12km_6hr_20000101-20091231.nc"
-  target_file: "./data_sample/infer_data/pr_3km_6hr_200001010300-200912312100.nc"
-  output_root: "./outputs"
+  predictor_file: "../data_sample/train_data/combined_12km_6hr_20000101-20091231.nc"
+  target_file: "../data_sample/infer_data/pr_3km_6hr_200001010300-200912312100.nc"
+  output_root: "../outputs"
 
 experiment:
   variable: "pr"

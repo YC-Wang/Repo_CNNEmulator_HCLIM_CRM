@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
 # Environments
 .env
@@ -8,10 +9,16 @@ __pycache__/
 env/
 venv/
 
-# Large Artifacts (Project Specific)
+# Large artifacts
 *.h5
 *.nc
 *.zip
+*.csv
+
+# Generated outputs and logs
+outputs/*
+!outputs/.gitkeep
+scripts/log_dir/
 
 # OS files
 .DS_Store

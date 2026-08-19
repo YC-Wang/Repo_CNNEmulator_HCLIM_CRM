@@ -1,90 +1,120 @@
-# CNN Emulator for HCLIM Convection-Permitting Dataset
+# Precipitation CNN Pipeline
 
-This repository contains a Python-based machine learning pipeline for emulating and downscaling climate variables (such as `tas` and `pr`) using Convolutional Neural Network (CNN) architectures. It bridges high-resolution climate model data (HCLIM-CRM) with computationally efficient ML emulators.
+This repository trains and runs a precipitation (`pr`) convolutional neural network with the existing HCLIM scientific setup preserved:
 
-## Key Features & Extensions
+- the current CNN architecture from [src/models.py](/C:/Users/Yi-Chi/Documents/ChatGPT/paper-revision-CNN/src/models.py)
+- ordinary MSE loss and MSE metric
+- standard normalization with mean and standard deviation computed from the training period only
+- separate training and inference entrypoints
+- a lightweight wrapper that can run training, inference, or both
+- configurable `+3 hour` predictor alignment for rainfall timestamps
 
-* **Base Architecture:** Adapted from the deep learning downscaling approach by Rampal et al. (2022).
-* **HCLIM Support:** Extended with dynamic configuration utilities and custom data pipelines tailored for HCLIM dataset ingestion.
-* **Research Context:** Provides the CNN emulator implementation for **Wang et al. (2026)**, submitted to *Artificial Intelligence for the Earth Systems* (AIES).
+## Environment
 
----
+The original project environment is described in [environment.yml](/C:/Users/Yi-Chi/Documents/ChatGPT/paper-revision-CNN/environment.yml). The training and inference scripts require at least:
 
-## Reference
+- Python with `tensorflow`
+- `xarray`, `numpy`, `pandas`, `pyyaml`
+- NetCDF IO support through `netcdf4` or `h5netcdf`
 
-* Rampal, N., et al. (2022). High-resolution downscaling with interpretable deep learning: Rainfall extremes over New Zealand. *Weather and Climate Extremes*, 38, 100525. [https://doi.org/10.1016/j.wace.2022.100525](https://doi.org/10.1016/j.wace.2022.100525)
+## Configuration
 
-* Wang, F., Y.-C. Wang, H. E. Kourabbaslou, K. Krus, A. Aldama-Campino, G. Nikulin, R. Döscher, P. Lind, S. Mirjalili, C. Lennard, and F. Schenk, 2026: Emulating land–atmosphere feedbacks in convection-permitting regional climate models using machine learning. Artif. Intell. Earth Syst., submitted.
+Use one YAML file for both training and inference. Start from [configs/pr_example.yaml](/C:/Users/Yi-Chi/Documents/ChatGPT/paper-revision-CNN/configs/pr_example.yaml) and copy it to `configs/pr01.yaml` through `configs/pr08.yaml` once the final periods and predictor combinations are defined.
 
----
+Key fields:
 
-## Project Structure
+- `metadata.experiment_id`: stable experiment directory name under `outputs/`
+- `paths.predictor_file` and `paths.target_file`: NetCDF inputs
+- `paths.output_root`: parent directory for experiment outputs
+- `experiment.target_scale`: multiplier applied before target normalization
+- `experiment.working_units`: explicit scaled target units
+- `experiment.std_epsilon`: threshold for replacing only finite near-zero standard deviations with `1.0`
+- `experiment.predictor_time_offset_hours`: rainfall predictor timestamp shift applied once before intersection
+- `experiment.downscale_variables`: predictor ordering used for both training and inference
+- `inference.saved_output_units`: `scaled` or `original`
 
+`target_scale: 86400.0` is only appropriate when the source precipitation variable is a flux in `kg m-2 s-1` and the working unit should be `mm day-1`. The code prints the source target units at runtime and does not infer alternative units from the variable name.
+
+## Commands
+
+Train only:
+
+```bash
+python scripts/training_ncp_mse.py configs/pr01.yaml
+```
+
+Infer only:
+
+```bash
+python scripts/inference_ncp_mse.py configs/pr01.yaml
+```
+
+Run both stages:
+
+```bash
+python scripts/run_pipeline.py configs/pr01.yaml --stage all
+```
+
+Wrapper stage selection:
+
+```bash
+python scripts/run_pipeline.py configs/pr01.yaml --stage train
+python scripts/run_pipeline.py configs/pr01.yaml --stage infer
+```
+
+## Output Layout
+
+Each experiment uses a stable directory keyed by `metadata.experiment_id`:
 
 ```text
-/your-project-root/
-├── environment.yml       # Conda environment definition
-├── README.md             # Project documentation
-├── config.yaml           # Primary experiment configuration
-├── scripts/              # Python source code
-│   └── train.py          # Main training script
-└── outputs/              # Large artifacts (Excluded from Git)
-    ├── log_dir/          # Timestamped experiment logs & config backups
-    └── models/           # Trained .h5 model weights
+outputs/<experiment_id>/
+  model.h5
+  config_resolved.yaml
+  history.csv
+  prediction.nc
+  metrics.csv
+  normalization/
+    predictor_mean.nc
+    predictor_std.nc
+    predictor_std_safe.nc
+    target_normalization.nc
+  logs/
+```
 
+The saved normalization files allow inference to load training-derived statistics directly instead of recalculating them.
 
-## Configuration Management
-This project uses a YAML-centric workflow. All hyperparameters, file paths, and metadata are handled in config.yaml. This ensures that experiments are 100% reproducible without modifying the Python source code.
+## Normalization Rules
 
-Example Configuration (config.yaml)
-YAML
-metadata:
-  dataset_version: "v1.2_2026_revised"
-  notes: "Testing SELU activation on temperature downscaling"
+Predictor normalization:
 
-experiment:
-  variable: "tas"
-  dates:
-    train: ["2000-01-01", "2007-12-31"]
+- mean and standard deviation are computed over the training period only
+- statistics are computed per predictor variable and grid cell
+- finite standard deviations below `std_epsilon` are replaced with `1.0`
+- missing statistics remain missing
 
-model_setup:
-  model_type: "cnn"
-  layer_filters: [16, 32, 64]
-  dropout: 0.6
+Target normalization:
 
-training:
-  learning_rate: 0.0001
-  batch_size: 64
-  experiment_tag: "baseline_run"
+- `target_scale` is applied before target statistics are computed
+- mean and standard deviation are computed over training time only
+- statistics remain spatially varying over the target grid
+- finite near-zero target standard deviations are replaced with `1.0`
+- zero-variance normalized training targets are verified to be zero
 
-## Setup & Usage
-###1. Installation
-Create the isolated environment using Conda:
+Training, validation, and test targets share one saved training-derived target mask and one deterministic stacking order. Inference reconstructs the full output grid from that saved mask instead of deriving a new one.
 
-conda env create -f environment.yml
-conda activate climate_emulator
-###2. Running an Experiment
-The script is designed to be run from the root directory. It accepts an optional configuration file argument.
+## Rainfall Timestamps And NetCDF Time
 
-# Run using the default config.yaml in root
-python scripts/train.py
+For precipitation, predictor timestamps are shifted by `experiment.predictor_time_offset_hours` once before intersecting with target timestamps. The target timestamps are not shifted by the code. The aligned predictor timestamps are preserved through inference and saved directly to NetCDF.
 
-# Run using a specific versioned configuration
-python scripts/train.py configs/test_v2.yaml
-📊 Outputs & Reproducibility
-Automated Experiment Tracking
-Every execution generates a unique Experiment ID (YYYYMMDD-HHMM_model_var_tag_jobID).
+The previous hard-coded `hours since 2009-01-01 ...` encoding has been removed. `prediction.nc` is written with the actual in-memory timestamps, then reopened immediately to verify that decoded timestamps still match exactly and that no extra three-hour shift was introduced.
 
-Logs: TensorBoard-compatible logs are saved to outputs/log_dir/{model_type}/{exp_id}/.
+## Freja Verification Before Running All Eight Experiments
 
-Config Backup: A copy of the .yaml file used for the run is saved directly into the log folder.
+Before launching the final `pr01` to `pr08` configurations on Freja, verify:
 
-Model Weights: Trained weights are exported to outputs/models/{exp_id}.h5.
-
-## Monitoring Results
-To visualize loss curves and metrics in real-time, point TensorBoard to your output directory:
-
-tensorboard --logdir outputs/log_dir/
-
-### Model Options
-Simple Conv (CNN): A convolutional neural network optimized for spatial climate data featuring selu activation and configurable kernel sizes.
+- predictor and target files expose the expected variable names
+- source precipitation units justify the configured `target_scale`
+- target metadata clarify accumulation interval and timestamp convention
+- aligned timestamps match the intended rainfall semantics after the configurable `+3 hour` shift
+- TensorFlow and any required GPU or CUDA stack are available in the Freja runtime
+- the full HCLIM datasets fit the expected predictor and target spatial dimensions

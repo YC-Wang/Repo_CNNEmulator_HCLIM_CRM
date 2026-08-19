@@ -1,184 +1,222 @@
 #!/usr/bin/env python
-# coding: utf-8
 
-import pandas as pd
-import xarray as xr
-import xarray as xr
-import os
-import numpy as np
+from __future__ import annotations
+
+import argparse
+import json
 import sys
-import tensorflow as tf
-import tensorflow.keras.backend as K
-import cartopy.crs as ccrs
-from dask.diagnostics import ProgressBar
+from pathlib import Path
 
-# set up code directory
-sys.path.append(r'../src/')
-os.chdir(r'./')
-# read in subroutines
-from models import train_model, simple_conv, predict, simple_dense
-from losses import gamma_loss_1d, gamma_mse_metric
-from prepare_data import format_features, prepare_training_dataset, create_test_train_split
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.optimizers import Adam
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = REPO_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from models import simple_conv, train_model
+from pipeline_utils import (
+    ensure_output_directories,
+    get_experiment_dir,
+    get_experiment_id,
+    get_git_commit_sha,
+    load_yaml_config,
+    resolve_config_paths,
+    write_yaml,
+)
+from prepare_data import (
+    compute_training_stats,
+    create_test_train_split,
+    normalize_with_training_stats,
+    prepare_training_dataset,
+    save_predictor_normalization,
+    save_target_normalization,
+    validate_prepared_arrays,
+)
 
 
 tf.random.set_seed(2)
 
-# ----------------------------
-# READ IN CONFIG FILES
-# ----------------------------
-import yaml
-import shutil  # No pip install needed!
-from datetime import datetime
-import argparse
 
-parser = argparse.ArgumentParser(description="Run ML Experiment with YAML config")
-parser.add_argument(
-    "config_file", 
-    type=str, 
-    help="Path to the yaml configuration file",
-    default="config.yaml",
-    nargs="?" # This makes it optional; defaults to config.yaml if not provided
-)
-args = parser.parse_args()
-
-try:
-    with open(args.config_file, "r") as f:
-        raw_cfg = yaml.safe_load(f)
-    print(f"--- Loaded Configuration: {args.config_file} ---")
-except FileNotFoundError:
-    print(f"Error: The file {args.config_file} was not found.")
-    sys.exit(1)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train the precipitation CNN pipeline.")
+    parser.add_argument("config_file", help="Path to the YAML configuration file.")
+    return parser.parse_args()
 
 
-# --- Path & Data Reorganization ---
-wrkdir = raw_cfg['paths']['work_dir']
-data_train_dir = raw_cfg['paths']['data_train_dir']
-data_infer_dir = raw_cfg['paths']['data_infer_dir']
-variable = raw_cfg['experiment']['variable']
-
-y_file = raw_cfg['experiment']['y_filename_template'].format(variable=variable)
-x_file = raw_cfg['experiment']['x_filename']
-
-exp_config = {
-    "y": os.path.join(data_infer_dir, y_file),
-    "X": os.path.join(wrkdir, data_train_dir, x_file),
-    "train_start": raw_cfg['experiment']['dates']['train'][0],
-    "train_end":   raw_cfg['experiment']['dates']['train'][1],
-    "val_start":   raw_cfg['experiment']['dates']['val'][0],
-    "val_end":     raw_cfg['experiment']['dates']['val'][1],
-    "test_start":  raw_cfg['experiment']['dates']['test'][0],
-    "test_end":    raw_cfg['experiment']['dates']['test'][1],
-    "output_var": [variable],
-    "downscale_variables": raw_cfg['experiment']['downscale_variables']
-}
-
-#print(exp_config)
-
-# --- Individual Model & Training Variables ---
-initial_learning_rate = raw_cfg['training']['learning_rate']
-dropout = raw_cfg['model']['dropout']
-hidden_layer_dense = raw_cfg['model']['hidden_layer_dense']
-batch_size = raw_cfg['training']['batch_size']
-kernel_size = raw_cfg['model']['kernel_size']
-layer_filters = raw_cfg['model']['layer_filters']
-epochs = raw_cfg['training']['epochs']
-# --- Read in architecture hyperparameters-------
-
-m = raw_cfg['model']
-dense_act = m['dense_activation']
-cnn_act   = m['cnn_activation']
-pad       = m['padding']
-bn        = m['use_bn']
-pooling   = m['use_pooling']
-dropout   = m['dropout']
-hidden_layer_dense   = m['hidden_layer_dense']
-layer_filters   = m['layer_filters']
-kernel_size    = m['kernel_size']
-
-# --- Read in model and log dir ---
-t = raw_cfg['training']
-model_type = t['model_type']  # e.g., 'linear'
-tag        = t['experiment_tag']
-timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-exp_id = f"{timestamp}_{model_type}_{variable}_{tag}"
-
-logdir = os.path.join(t['log_root'], model_type, exp_id)
-model_weights_name = os.path.join(t['model_root'], f"{exp_id}.h5")
-
-os.makedirs(logdir, exist_ok=True) # Automatically create the directory
-shutil.copy(args.config_file, os.path.join(logdir, "config_backup.yaml"))
-
-print(f"Log Directory: {logdir}")
-print(f"Weights Path:  {model_weights_name}")
-# -------------------------
-
-# # Loading the Training Data
-x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(exp_config)
-
-#outscale = 86400. # for rainfall
-outscale = 1. # for temperature
-y_train = y_train*outscale
-y_val   = y_val*outscale
-y_test  = y_test*outscale
-
-# normalized 
-# Compute Mean and Standard Deviation from Training Data
-train_mean = y_train.mean(dim="time")
-train_std = y_train.std(dim="time")
-#train_mean.to_netcdf(f"train_mean_{variable}_INTERIM_2000to2009.nc")
-#train_std.to_netcdf(f"train_std_{variable}_INTERIM_2000to2009.nc")
+def _working_units(config: dict, source_units: str | None) -> str:
+    working_units = config["experiment"].get("working_units")
+    if working_units:
+        return working_units
+    return source_units or "unspecified"
 
 
-# Standardization (Z-score normalization)
-y_train = (y_train - train_mean) / train_std
-y_val   = (y_val - train_mean) / train_std
-y_test  = (y_test - train_mean) / train_std
+def main() -> int:
+    args = parse_args()
+    raw_config, config_path = load_yaml_config(args.config_file)
+    config = resolve_config_paths(raw_config, config_path)
 
-# load the training data
-x_train, x_test, x_val, y_train, y_test, y_val = prepare_training_dataset(x_train, x_val, x_test, y_train, y_val, y_test)      
+    experiment_id = get_experiment_id(config)
+    experiment_dir = get_experiment_dir(config)
+    output_dirs = ensure_output_directories(experiment_dir)
 
-input_shape = x_train.shape[1:]
-output_shape = y_train.z.size
+    predictor_file = Path(config["paths"]["predictor_file"])
+    target_file = Path(config["paths"]["target_file"])
+    variable = config["experiment"]["variable"]
 
-# yi-chi #
-#optimizer = tf.keras.optimizers.Adam(lr =initial_learning_rate)
-from tensorflow.keras.optimizers import legacy
-optimizer = legacy.Adam(lr =initial_learning_rate)
-# yi-chi #
+    print(f"Experiment ID: {experiment_id}")
+    print(f"Configuration: {config_path}")
+    print(f"Predictor file: {predictor_file}")
+    print(f"Target file: {target_file}")
+
+    split_config = {
+        "X": str(predictor_file),
+        "y": str(target_file),
+        "train_start": config["experiment"]["dates"]["train"][0],
+        "train_end": config["experiment"]["dates"]["train"][1],
+        "val_start": config["experiment"]["dates"]["val"][0],
+        "val_end": config["experiment"]["dates"]["val"][1],
+        "test_start": config["experiment"]["dates"]["test"][0],
+        "test_end": config["experiment"]["dates"]["test"][1],
+        "output_var": [variable],
+        "downscale_variables": config["experiment"]["downscale_variables"],
+        "predictor_time_offset_hours": config["experiment"]["predictor_time_offset_hours"],
+    }
+
+    x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(split_config)
+
+    source_units = y_train.attrs.get("units")
+    target_scale = float(config["experiment"]["target_scale"])
+    working_units = _working_units(config, source_units)
+    print(f"Source target units: {source_units or 'missing'}")
+    print(f"Applied target scale: {target_scale}")
+    print(f"Working target units: {working_units}")
+
+    y_train_scaled = y_train * target_scale
+    y_val_scaled = y_val * target_scale
+    y_test_scaled = y_test * target_scale
+
+    std_epsilon = float(config["experiment"]["std_epsilon"])
+    predictor_mean, predictor_std, predictor_std_safe, predictor_valid_mask, predictor_zero_std_mask = compute_training_stats(
+        x_train[config["experiment"]["downscale_variables"]],
+        std_epsilon,
+    )
+    target_mean, target_std, target_std_safe, target_valid_mask, target_zero_std_mask = compute_training_stats(
+        y_train_scaled,
+        std_epsilon,
+    )
+
+    zero_variance_training = normalize_with_training_stats(
+        y_train_scaled,
+        target_mean,
+        target_std_safe,
+    ).where(target_zero_std_mask)
+    if zero_variance_training.count() and not np.allclose(
+        zero_variance_training.fillna(0.0).values,
+        0.0,
+    ):
+        raise ValueError("Zero-variance normalized training targets must evaluate to zero.")
+
+    x_train_ready, x_val_ready, x_test_ready, y_train_ready, y_val_ready, y_test_ready = prepare_training_dataset(
+        x_train=x_train,
+        x_val=x_val,
+        x_test=x_test,
+        y_train=y_train_scaled,
+        y_val=y_val_scaled,
+        y_test=y_test_scaled,
+        predictor_mean=predictor_mean,
+        predictor_std_safe=predictor_std_safe,
+        target_mean=target_mean,
+        target_std_safe=target_std_safe,
+        target_valid_mask=target_valid_mask,
+        variable_order=config["experiment"]["downscale_variables"],
+    )
+
+    validate_prepared_arrays(
+        {
+            "train": x_train_ready,
+            "val": x_val_ready,
+            "test": x_test_ready,
+        },
+        {
+            "train": y_train_ready,
+            "val": y_val_ready,
+            "test": y_test_ready,
+        },
+    )
+
+    resolved_config = json.loads(json.dumps(config))
+    resolved_config["metadata"]["source_units"] = source_units
+    resolved_config["metadata"]["working_units"] = working_units
+    resolved_config["metadata"]["git_commit_sha"] = get_git_commit_sha(REPO_ROOT)
+    resolved_config["metadata"]["predictor_order"] = config["experiment"]["downscale_variables"]
+    resolved_config["metadata"]["target_spatial_dims"] = list(target_valid_mask.dims)
+    resolved_config["metadata"]["target_masks_saved"] = True
+    resolved_config["metadata"]["predictor_stats_saved"] = True
+    resolved_config["paths"]["experiment_dir"] = str(experiment_dir)
+    resolved_config["artifacts"] = {
+        "model": "model.h5",
+        "history": "history.csv",
+        "prediction": "prediction.nc",
+        "metrics": "metrics.csv",
+        "normalization_dir": "normalization",
+    }
+
+    save_predictor_normalization(
+        predictor_mean=predictor_mean,
+        predictor_std=predictor_std,
+        predictor_std_safe=predictor_std_safe,
+        variable_order=config["experiment"]["downscale_variables"],
+        normalization_dir=output_dirs["normalization"],
+    )
+    save_target_normalization(
+        target_mean=target_mean,
+        target_std=target_std,
+        target_std_safe=target_std_safe,
+        target_valid_mask=target_valid_mask,
+        target_zero_std_mask=target_zero_std_mask,
+        normalization_dir=output_dirs["normalization"],
+    )
+    write_yaml(experiment_dir / "config_resolved.yaml", resolved_config)
+
+    input_shape = x_train_ready.shape[1:]
+    output_shape = y_train_ready.sizes["z"]
+
+    model = simple_conv(
+        layer_filters=config["model"]["layer_filters"],
+        bn=config["model"]["use_bn"],
+        padding=config["model"]["padding"],
+        kernel_size=(config["model"]["kernel_size"], config["model"]["kernel_size"]),
+        pooling=config["model"]["use_pooling"],
+        dense_layers=[config["model"]["hidden_layer_dense"], output_shape],
+        dense_activation=config["model"]["dense_activation"],
+        input_shape=input_shape,
+        dropout=config["model"]["dropout"],
+        activation=config["model"]["cnn_activation"],
+    )
+
+    history, _ = train_model(
+        model=model,
+        x_train=x_train_ready.values,
+        y_train=y_train_ready.values,
+        x_val=x_val_ready.values,
+        y_val=y_val_ready.values,
+        loss=config["training"]["loss"],
+        model_weights_name=str(experiment_dir / "model.h5"),
+        logdir=str(output_dirs["logs"]),
+        epochs=config["training"]["epochs"],
+        batch_size=config["training"]["batch_size"],
+        optimizer=Adam(learning_rate=float(config["training"]["learning_rate"])),
+        metrics=[config["training"]["metrics"]],
+    )
+
+    pd.DataFrame(history.history).to_csv(experiment_dir / "history.csv", index=False)
+    print(f"Training artifacts saved under {experiment_dir}")
+    return 0
 
 
-# # Defining Three Model Architectures
-# cnn model with mse loss
-simple_cnn = simple_conv(layer_filters=layer_filters, 
-                         bn=bn, padding=pad, 
-                         kernel_size=(kernel_size,kernel_size),
-                         pooling=pooling, 
-                         dense_layers=[hidden_layer_dense, output_shape], 
-                         dense_activation=dense_act, input_shape=input_shape,
-                         dropout=dropout, activation=cnn_act)
-
-
-
-x_train = x_train.values if isinstance(x_train, xr.DataArray) else x_train
-y_train = y_train.values if isinstance(y_train, xr.DataArray) else y_train
-y_train = y_train.to_array().values if isinstance(y_train, xr.Dataset) else y_train
-
-
-# set up model to run
-# --- Extract Training Parameters ---
-t = raw_cfg['training']
-model_type = t['model_type']  # e.g., 'linear'
-active_model = linear_model if model_type == "linear" else simple_cnn
-
-# --- Run the Training ---
-history, trained_model = train_model(
-    active_model, x_train, y_train,
-    x_val = x_val.values, y_val = y_val.values,
-    loss = t['loss'], epochs = t['epochs'], 
-    batch_size = t['batch_size'],
-    optimizer = optimizer,
-    model_weights_name = model_weights_name,
-    logdir = logdir,
-    metrics = t['metrics']
-)
-
+if __name__ == "__main__":
+    raise SystemExit(main())
