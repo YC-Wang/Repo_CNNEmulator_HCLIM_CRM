@@ -146,10 +146,10 @@ To submit the current runnable experiments as separate Slurm jobs, use [scripts/
 Examples:
 
 ```bash
-bash scripts/submit_all_slurm.sh
-STAGE=train bash scripts/submit_all_slurm.sh
-STAGE=infer TIME_LIMIT=08:00:00 bash scripts/submit_all_slurm.sh
-ACCOUNT=myproj PARTITION=gpu EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
+ACCOUNT=my_project bash scripts/submit_all_slurm.sh
+ACCOUNT=my_project STAGE=train bash scripts/submit_all_slurm.sh
+ACCOUNT=my_project STAGE=infer TIME_LIMIT=08:00:00 bash scripts/submit_all_slurm.sh
+ACCOUNT=my_project PARTITION=gpu EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
 ```
 
 The script currently submits:

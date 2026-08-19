@@ -4,7 +4,7 @@ set -euo pipefail
 
 STAGE="${STAGE:-all}"
 PARTITION="${PARTITION:-gpu}"
-ACCOUNT="${ACCOUNT:-aspect}"
+ACCOUNT="${ACCOUNT:-}"
 TIME_LIMIT="${TIME_LIMIT:-24:00:00}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
 MEMORY="${MEMORY:-64G}"
@@ -31,7 +31,7 @@ Usage:
 Environment overrides:
   STAGE=train|infer|all
   PARTITION=gpu
-  ACCOUNT=aspect
+  ACCOUNT=my_project
   TIME_LIMIT=24:00:00
   CPUS_PER_TASK=8
   MEMORY=64G
@@ -44,13 +44,19 @@ Environment overrides:
 Examples:
   STAGE=train bash scripts/submit_all_slurm.sh
   STAGE=infer PARTITION=gpu TIME_LIMIT=08:00:00 bash scripts/submit_all_slurm.sh
-  ACCOUNT=aspect EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
+  ACCOUNT=my_project EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
 EOF
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
+fi
+
+if [[ -z "${ACCOUNT}" ]]; then
+  echo "Set ACCOUNT to your Freja project before submitting, for example:" >&2
+  echo "  ACCOUNT=my_project bash scripts/submit_all_slurm.sh" >&2
+  exit 1
 fi
 
 if [[ ! -d "configs" || ! -f "scripts/run_pipeline.py" ]]; then
