@@ -192,7 +192,7 @@ def main() -> int:
     prediction.attrs["experiment_id"] = resolved_config["metadata"]["experiment_id"]
     prediction.attrs["predictor_list"] = ",".join(predictor_order)
     prediction.attrs["git_commit_sha"] = resolved_config["metadata"].get("git_commit_sha", "")
-    prediction.attrs["negative_rainfall_clipping_applied"] = clip_negative
+    prediction.attrs["negative_rainfall_clipping_applied"] = int(clip_negative)
     prediction.name = resolved_config["experiment"]["variable"]
 
     output_file = experiment_dir / "prediction.nc"
