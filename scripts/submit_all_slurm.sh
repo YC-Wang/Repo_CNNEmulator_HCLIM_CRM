@@ -3,16 +3,11 @@
 set -euo pipefail
 
 STAGE="${STAGE:-all}"
-PARTITION="${PARTITION:-}"
-ACCOUNT="${ACCOUNT:-}"
-TIME_LIMIT="${TIME_LIMIT:-24:00:00}"
-CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
-MEMORY="${MEMORY:-64G}"
-GPUS_PER_JOB="${GPUS_PER_JOB:-1}"
+ACCOUNT="${ACCOUNT:-aspect}"
+TIME_LIMIT="${TIME_LIMIT:-4:00:00}"
 CONDA_ENV="${CONDA_ENV:-high_res_env}"
 MAMBA_MODULE="${MAMBA_MODULE:-Mambaforge/23.3.1-1-hpc1}"
 LOG_DIR="${LOG_DIR:-slurm_logs}"
-EXTRA_SBATCH_ARGS="${EXTRA_SBATCH_ARGS:-}"
 
 CONFIGS=(
   "configs/pr01.yaml"
@@ -30,22 +25,16 @@ Usage:
 
 Environment overrides:
   STAGE=train|infer|all
-  PARTITION=gpu
-  ACCOUNT=my_project
-  TIME_LIMIT=24:00:00
-  CPUS_PER_TASK=8
-  MEMORY=64G
-  GPUS_PER_JOB=1
+  ACCOUNT=aspect
+  TIME_LIMIT=4:00:00
   CONDA_ENV=high_res_env
   MAMBA_MODULE=Mambaforge/23.3.1-1-hpc1
   LOG_DIR=slurm_logs
-  EXTRA_SBATCH_ARGS="--constraint=a100"
 
 Examples:
-  ACCOUNT=my_project STAGE=train bash scripts/submit_all_slurm.sh
-  ACCOUNT=my_project STAGE=infer TIME_LIMIT=08:00:00 bash scripts/submit_all_slurm.sh
-  ACCOUNT=my_project EXTRA_SBATCH_ARGS="--constraint=a100" bash scripts/submit_all_slurm.sh
-  ACCOUNT=my_project PARTITION=gpu bash scripts/submit_all_slurm.sh
+  bash scripts/submit_all_slurm.sh
+  STAGE=train bash scripts/submit_all_slurm.sh
+  STAGE=infer TIME_LIMIT=8:00:00 bash scripts/submit_all_slurm.sh
 EOF
 }
 
@@ -54,14 +43,13 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-if [[ -z "${ACCOUNT}" ]]; then
-  echo "Set ACCOUNT to your Freja project before submitting, for example:" >&2
-  echo "  ACCOUNT=my_project bash scripts/submit_all_slurm.sh" >&2
+if [[ ! -d "configs" || ! -f "scripts/run_pipeline.py" ]]; then
+  echo "Run this script from the repository root." >&2
   exit 1
 fi
 
-if [[ ! -d "configs" || ! -f "scripts/run_pipeline.py" ]]; then
-  echo "Run this script from the repository root." >&2
+if ! command -v python >/dev/null 2>&1; then
+  echo "python is required to read experiment_id from YAML configs." >&2
   exit 1
 fi
 
@@ -75,8 +63,15 @@ for config in "${CONFIGS[@]}"; do
 done
 
 for config in "${CONFIGS[@]}"; do
-  experiment_id="$(basename "${config}" .yaml)"
-  job_script="${LOG_DIR}/${experiment_id}-${STAGE}.sbatch"
+  experiment_id="$(python - <<EOF
+import yaml
+with open("${config}", "r", encoding="utf-8") as handle:
+    config = yaml.safe_load(handle)
+print(config["metadata"]["experiment_id"])
+EOF
+)"
+  job_slug="$(printf '%s' "${experiment_id}" | tr ' /' '__' | tr -cd '[:alnum:]_.-')"
+  job_script="${LOG_DIR}/${job_slug}-${STAGE}.sbatch"
 
   echo "Submitting ${config} as ${experiment_id}-${STAGE}"
 
@@ -85,31 +80,9 @@ for config in "${CONFIGS[@]}"; do
 #SBATCH -N 1
 #SBATCH -t ${TIME_LIMIT}
 #SBATCH -A ${ACCOUNT}
-#SBATCH -J ${experiment_id}-${STAGE}
-#SBATCH -o ${LOG_DIR}/${experiment_id}-%j.out
-#SBATCH --cpus-per-task=${CPUS_PER_TASK}
-#SBATCH --mem=${MEMORY}
+#SBATCH -J ${job_slug}-${STAGE}
+#SBATCH -o ${LOG_DIR}/${job_slug}-%j.out
 EOF
-
-  if [[ -n "${PARTITION}" ]]; then
-    cat >> "${job_script}" <<EOF
-#SBATCH -p ${PARTITION}
-EOF
-  fi
-
-  if [[ "${GPUS_PER_JOB}" != "0" ]]; then
-    cat >> "${job_script}" <<EOF
-#SBATCH --gpus=${GPUS_PER_JOB}
-EOF
-  fi
-
-  if [[ -n "${EXTRA_SBATCH_ARGS}" ]]; then
-    for extra_arg in ${EXTRA_SBATCH_ARGS}; do
-      cat >> "${job_script}" <<EOF
-#SBATCH ${extra_arg}
-EOF
-    done
-  fi
 
   cat >> "${job_script}" <<EOF
 
