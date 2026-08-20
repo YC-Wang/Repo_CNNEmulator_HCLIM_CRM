@@ -5,7 +5,7 @@ metadata:
 
 paths:
   predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_199501010000-200512311800_withmrsol_whus.nc"
-  target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr_3km_6hr_199501010300-200512312100.nc"
+  target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr/pr_3km_6hr_199501010300-200512312100.nc"
   output_root: "../outputs"
 
 experiment:

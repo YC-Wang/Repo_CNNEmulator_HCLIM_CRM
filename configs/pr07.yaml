@@ -5,7 +5,7 @@ metadata:
 
 paths:
   predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_199501010000-200512311800_withmrsol_whus.nc"
-  target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr_3km_6hr_199501010300-200512312100.nc"
+  target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr/pr_3km_6hr_199501010300-200512312100.nc"
   output_root: "../outputs"
 
 experiment:
@@ -62,7 +62,7 @@ training:
   segments:
     - name: hist_train
       predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_199501010000-200512311800_withmrsol_whus.nc"
-      target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr_3km_6hr_199501010300-200512312100.nc"
+      target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr/pr_3km_6hr_199501010300-200512312100.nc"
       dates: ["2001-01-01", "2004-12-31"]
     - name: mc_train
       predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_204001010000-205012311800_wmrsol_whus.nc"
@@ -71,7 +71,7 @@ training:
   validation_segments:
     - name: hist_val
       predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_199501010000-200512311800_withmrsol_whus.nc"
-      target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr_3km_6hr_199501010300-200512312100.nc"
+      target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr/pr_3km_6hr_199501010300-200512312100.nc"
       dates: ["2005-01-01", "2005-12-31"]
 
 inference:
@@ -82,7 +82,7 @@ inference:
   runs:
     - name: hist_2005
       predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_199501010000-200512311800_withmrsol_whus.nc"
-      target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr_3km_6hr_199501010300-200512312100.nc"
+      target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr/pr_3km_6hr_199501010300-200512312100.nc"
       dates: ["2005-01-01", "2005-12-31"]
     - name: mc_2050
       predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_204001010000-205012311800_wmrsol_whus.nc"

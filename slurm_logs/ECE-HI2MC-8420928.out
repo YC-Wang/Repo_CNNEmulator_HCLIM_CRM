@@ -1,0 +1,96 @@
+***********************************
+You have loaded a Mambaforge module
+***********************************
+
+JUST LOADING THIS MODULE DOES *NOT* CHANGE THE PYTHON VERSION, NOR ENABLES ANY
+EXTRA PYTHON MODULES.
+
+This module makes available the 'mamba' and 'conda' commands from the miniforge
+Mambaforge distribution,
+with which users can create named anaconda-like environments and then activate
+them.
+
+To create and use a customized environment use 'mamba create ...' and
+then 'mamba activate ...' (see example below).
+
+---------------------------------------------------------------------------------------------------
+NOTE: NSC strongly advices against placing 'mamba activate' (or 'conda
+activate', with or without
+      arguments) in your shell initialization files, (e.g. '.bashrc' or
+'.bash_profile') since
+      this severly alters the environment for running software in ways that
+cause unpredictable
+      issues that can be difficult to diagnose.
+---------------------------------------------------------------------------------------------------
+
+Example usage:
+
+  * Setting up a customized environment and run a Python program in it:
+
+    mamba create -n myenv python=3.8 scipy=1.5.2
+    mamba activate myenv
+    python my_scipy_python_program.py
+
+  * To run the python program in the same environment when logging in the next
+time:
+
+    mabma activate myenv
+    python my_scipy_python_program.py
+
+The miniforge Mambaforge distribution aims to be command-line compatible with
+Anaconda.
+More details on Anaconda environment management are available here:
+
+
+https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html
+
+
+2026-08-20 15:34:06.080343: I tensorflow/core/util/port.cc:110] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-08-20 15:34:06.387749: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE4.1 SSE4.2 AVX AVX2 AVX512F AVX512_VNNI AVX512_BF16 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Experiment ID: ECE-HI2MC
+Configuration: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM_rainfall_multiexp/configs/pr04.yaml
+Predictor file: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_199501010000-200512311800_withmrsol_whus.nc
+Target file: /nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr_3km_6hr_199501010300-200512312100.nc
+Traceback (most recent call last):
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/file_manager.py", line 209, in _acquire_with_cache_info
+    file = self._cache[self._key]
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/lru_cache.py", line 55, in __getitem__
+    value = self._cache[key]
+KeyError: [<class 'netCDF4._netCDF4.Dataset'>, ('/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr_3km_6hr_199501010300-200512312100.nc',), 'r', (('clobber', True), ('diskless', False), ('format', 'NETCDF4'), ('persist', False)), 'd64ad1f3-d131-4d79-bf27-d828bcc0e3ae']
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "scripts/training_ncp_mse.py", line 302, in <module>
+    raise SystemExit(main())
+  File "scripts/training_ncp_mse.py", line 114, in main
+    x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(split_config)
+  File "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM_rainfall_multiexp/src/prepare_data.py", line 448, in create_test_train_split
+    predictors, target = align_predictors_and_target(
+  File "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM_rainfall_multiexp/src/prepare_data.py", line 92, in align_predictors_and_target
+    target_opened = xr.open_dataset(target_file, chunks={TIME_DIM: 3000})
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/api.py", line 541, in open_dataset
+    backend_ds = backend.open_dataset(
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/netCDF4_.py", line 578, in open_dataset
+    store = NetCDF4DataStore.open(
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/netCDF4_.py", line 382, in open
+    return cls(manager, group=group, mode=mode, lock=lock, autoclose=autoclose)
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/netCDF4_.py", line 329, in __init__
+    self.format = self.ds.data_model
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/netCDF4_.py", line 391, in ds
+    return self._acquire()
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/netCDF4_.py", line 385, in _acquire
+    with self._manager.acquire_context(needs_lock) as root:
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/contextlib.py", line 113, in __enter__
+    return next(self.gen)
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/file_manager.py", line 197, in acquire_context
+    file, cached = self._acquire_with_cache_info(needs_lock)
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/file_manager.py", line 215, in _acquire_with_cache_info
+    file = self._opener(*self._args, **kwargs)
+  File "src/netCDF4/_netCDF4.pyx", line 2470, in netCDF4._netCDF4.Dataset.__init__
+  File "src/netCDF4/_netCDF4.pyx", line 2107, in netCDF4._netCDF4._ensure_nc_success
+FileNotFoundError: [Errno 2] No such file or directory: '/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_HIST/3km/6hr/pr_3km_6hr_199501010300-200512312100.nc'
+Experiment ID: ECE-HI2MC
+Configuration: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM_rainfall_multiexp/configs/pr04.yaml
+Running: /home/sm_yicwa/.conda/envs/high_res_env/bin/python scripts/training_ncp_mse.py /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM_rainfall_multiexp/configs/pr04.yaml

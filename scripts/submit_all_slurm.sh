@@ -10,11 +10,11 @@ MAMBA_MODULE="${MAMBA_MODULE:-Mambaforge/23.3.1-1-hpc1}"
 LOG_DIR="${LOG_DIR:-slurm_logs}"
 
 CONFIGS=(
-  "configs/pr01.yaml"
-  "configs/pr03.yaml"
-  "configs/pr04.yaml"
-  "configs/pr05.yaml"
-  "configs/pr06.yaml"
+#  "configs/pr01.yaml"
+#  "configs/pr03.yaml"
+#  "configs/pr04.yaml"
+#  "configs/pr05.yaml"
+#  "configs/pr06.yaml"
   "configs/pr07.yaml"
 )
 
