@@ -280,6 +280,10 @@ def _stack_with_mask(
     valid_mask: xr.DataArray,
     spatial_dims: tuple[str, str],
 ) -> xr.DataArray:
+    if data.sizes.get(TIME_DIM, 0) == 0:
+        empty = data.isel({TIME_DIM: slice(0, 0)}).stack(z=spatial_dims).transpose(TIME_DIM, "z")
+        valid_stack = valid_mask.stack(z=spatial_dims)
+        return empty.where(valid_stack, drop=True)
     stacked = data.stack(z=spatial_dims).transpose(TIME_DIM, "z")
     valid_stack = valid_mask.stack(z=spatial_dims)
     return stacked.where(valid_stack, drop=True)
