@@ -1,96 +1,126 @@
 # CNN Emulator for HCLIM Convection-Permitting Dataset
 
-This repository contains a Python-based machine learning pipeline for emulating and downscaling climate variables (such as `tas` and `pr`) using Convolutional Neural Network (CNN) architectures. It bridges high-resolution climate model data (HCLIM-CRM) with computationally efficient ML emulators.
-
-## Key Features & Extensions
-
-* **Base Architecture:** Adapted from the deep learning downscaling approach by Rampal et al. (2022).
-* **HCLIM Support:** Extended with dynamic configuration utilities and custom data pipelines tailored for HCLIM dataset ingestion.
-* **Research Context:** Provides the CNN emulator implementation for **Wang et al. (2026)**, submitted to *Artificial Intelligence for the Earth Systems* (AIES).
-
----
+This repository contains the CNN-based temperature and precipitation emulator workflow used for HCLIM-CRM downscaling experiments. The current `main` branch uses YAML-driven training and inference entry points under `scripts/`.
 
 ## Reference
 
-* Rampal, N., et al. (2022). High-resolution downscaling with interpretable deep learning: Rainfall extremes over New Zealand. *Weather and Climate Extremes*, 38, 100525. [https://doi.org/10.1016/j.wace.2022.100525](https://doi.org/10.1016/j.wace.2022.100525)
+- Rampal, N., et al. (2022). High-resolution downscaling with interpretable deep learning: Rainfall extremes over New Zealand. *Weather and Climate Extremes*, 38, 100525. [https://doi.org/10.1016/j.wace.2022.100525](https://doi.org/10.1016/j.wace.2022.100525)
+- Wang, F., Y.-C. Wang, H. E. Kourabbaslou, K. Krus, A. Aldama-Campino, G. Nikulin, R. Doscher, P. Lind, S. Mirjalili, C. Lennard, and F. Schenk, 2026: Emulating land-atmosphere feedbacks in convection-permitting regional climate models using machine learning. *Artificial Intelligence for the Earth Systems*, submitted.
 
-* Wang, F., Y.-C. Wang, H. E. Kourabbaslou, K. Krus, A. Aldama-Campino, G. Nikulin, R. Döscher, P. Lind, S. Mirjalili, C. Lennard, and F. Schenk, 2026: Emulating land–atmosphere feedbacks in convection-permitting regional climate models using machine learning. Artif. Intell. Earth Syst., submitted.
+## Main Entry Points
 
----
+- Training: `scripts/training_ncp_mse.py`
+- Inference: `scripts/inference_ncp_mse_normalized_mrsol_normal2009.py`
 
-## Project Structure
+Both scripts accept a positional YAML config path and can be launched either from the repository root or from the `scripts/` directory.
 
+## Environment
 
-```text
-/your-project-root/
-├── environment.yml       # Conda environment definition
-├── README.md             # Project documentation
-├── config.yaml           # Primary experiment configuration
-├── scripts/              # Python source code
-│   └── train.py          # Main training script
-└── outputs/              # Large artifacts (Excluded from Git)
-    ├── log_dir/          # Timestamped experiment logs & config backups
-    └── models/           # Trained .h5 model weights
+The project environment is defined in `environment.yml`. For lightweight local validation, the non-TensorFlow checks only need:
 
+- `PyYAML`
+- `numpy`
+- `pandas`
+- `xarray`
+- `pytest`
+- `netCDF4`
 
-## Configuration Management
-This project uses a YAML-centric workflow. All hyperparameters, file paths, and metadata are handled in config.yaml. This ensures that experiments are 100% reproducible without modifying the Python source code.
+TensorFlow-dependent training or inference runs should be executed in the project Conda environment or the Freja runtime environment.
 
-Example Configuration (config.yaml)
-YAML
-metadata:
-  dataset_version: "v1.2_2026_revised"
-  notes: "Testing SELU activation on temperature downscaling"
+## Configuration
 
-experiment:
-  variable: "tas"
-  dates:
-    train: ["2000-01-01", "2007-12-31"]
+The codebase is config-driven. Existing experiment YAML files such as `exp1_normal_withT.yaml` remain the source of truth for:
 
-model_setup:
-  model_type: "cnn"
-  layer_filters: [16, 32, 64]
-  dropout: 0.6
+- dataset paths
+- train/validation/test periods
+- predictor ordering
+- model hyperparameters
+- output locations
 
-training:
-  learning_rate: 0.0001
-  batch_size: 64
-  experiment_tag: "baseline_run"
+Path handling follows the current scripts:
 
-## Setup & Usage
-###1. Installation
-Create the isolated environment using Conda:
+- the CLI config argument is resolved relative to the current working directory
+- relative paths inside the YAML are resolved from the YAML file location
+- absolute HPC paths are preserved as absolute paths
+- inference model paths can be supplied by `--model-file` or `inference.model_file`
 
-conda env create -f environment.yml
-conda activate climate_emulator
-###2. Running an Experiment
-The script is designed to be run from the root directory. It accepts an optional configuration file argument.
+## Training
 
-# Run using the default config.yaml in root
-python scripts/train.py
+Run training with a config file:
 
-# Run using a specific versioned configuration
-python scripts/train.py configs/test_v2.yaml
+```bash
 python scripts/training_ncp_mse.py exp1_normal_withT.yaml
+```
 
-Relative configuration arguments are resolved from the caller's current working directory. Relative paths inside the YAML are resolved consistently from the configuration file location, while absolute HPC paths are preserved unchanged.
+From inside `scripts/`:
 
-Plain-text diagnostic logs are written separately from TensorBoard event logs under the configured log root, with an early bootstrap log under `output/logs/bootstrap/`. Failed-run diagnostic logs capture the command line, key resolved paths, runtime metadata, and the full traceback.
+```bash
+python training_ncp_mse.py ../exp1_normal_withT.yaml
+```
 
-📊 Outputs & Reproducibility
-Automated Experiment Tracking
-Every execution generates a unique Experiment ID (YYYYMMDD-HHMM_model_var_tag_jobID).
+Import-only smoke test:
 
-Logs: TensorBoard-compatible logs are saved to outputs/log_dir/{model_type}/{exp_id}/.
+```bash
+python scripts/training_ncp_mse.py --smoke-test-imports
+```
 
-Config Backup: A copy of the .yaml file used for the run is saved directly into the log folder.
+Training writes:
 
-Model Weights: Trained weights are exported to outputs/models/{exp_id}.h5.
+- a bootstrap log under `output/logs/bootstrap/`
+- a run-specific diagnostic log under the configured `training.log_root`
+- a TensorBoard log directory under the configured `training.log_root`
+- model weights under the configured `training.model_root`
+- a copied config file alongside the run outputs
 
-## Monitoring Results
-To visualize loss curves and metrics in real-time, point TensorBoard to your output directory:
+## Inference
 
-tensorboard --logdir outputs/log_dir/
+Run inference with the same YAML configuration style used by training:
 
-### Model Options
-Simple Conv (CNN): A convolutional neural network optimized for spatial climate data featuring selu activation and configurable kernel sizes.
+```bash
+python scripts/inference_ncp_mse_normalized_mrsol_normal2009.py exp1_normal_withT.yaml --model-file /path/to/model.h5
+```
+
+If the YAML includes `inference.model_file`, the CLI override is optional:
+
+```bash
+python scripts/inference_ncp_mse_normalized_mrsol_normal2009.py exp1_normal_withT.yaml
+```
+
+From inside `scripts/`:
+
+```bash
+python inference_ncp_mse_normalized_mrsol_normal2009.py ../exp1_normal_withT.yaml --model-file /path/to/model.h5
+```
+
+Import-only smoke test:
+
+```bash
+python scripts/inference_ncp_mse_normalized_mrsol_normal2009.py --smoke-test-imports
+```
+
+Inference writes:
+
+- a bootstrap log under `output/logs/bootstrap/`
+- a run-specific diagnostic log under `training.log_root/diagnostic/inference/`
+- a prediction NetCDF file
+- an evaluation metrics CSV
+- a copied config file in the inference output directory
+
+By default, inference output goes to `output/inference/<variable>/` next to the config file unless `--output-dir` or `inference.output_dir` is set.
+
+## Notes on the Current Temperature Pipeline
+
+- The temperature path on `main` preserves the legacy `exp1*.yaml` inventory.
+- Temperature inference uses the training-period target mean and standard deviation to invert normalized predictions before writing NetCDF output.
+- The current Freja bootstrap log added on `main` documents a real data issue where `tas` was requested in `downscale_variables` but was absent from the predictor dataset. That failure is a dataset/config mismatch, not an entry-point import problem.
+
+## Validation
+
+Available lightweight checks on this branch:
+
+```bash
+python -m compileall scripts src tests
+python -m pytest -q -p no:cacheprovider tests/test_logging_utils.py tests/test_training_script.py tests/test_inference_script.py tests/test_pipeline_utils.py
+```
+
+TensorFlow-dependent model build, save/load, and end-to-end training validation should still be run in the full project environment.

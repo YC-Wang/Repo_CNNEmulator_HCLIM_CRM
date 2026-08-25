@@ -1,226 +1,380 @@
 #!/usr/bin/env python
-# coding: utf-8
 
-#get_ipython().run_line_magic('load_ext', 'autoreload')
-import pandas as pd
-import xarray as xr
-import matplotlib
-matplotlib.use('Agg')  # Use a non-GUI backend
-import matplotlib.pyplot as plt
-import xarray as xr
+from __future__ import annotations
+
+import argparse
+import logging
 import os
-import numpy as np
+import platform
+import shutil
+import subprocess
 import sys
-import tensorflow as tf
-import tensorflow.keras.backend as K
-import cartopy.crs as ccrs
+from datetime import datetime
+from pathlib import Path
 
-# these are my working paths
-#sys.path.append(r'/nesi/project/niwa00018/rampaln/High-res-interpretable-dl/src')
-#sys.path.append(r'/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/high-resolution-downscaling/src')
-sys.path.append(r'/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_HCLIM_CRM_T_SM/src_temp/')
-#sys.path.append(r'src_temp/')
-# change to the directory of the "src file" in your directory
-#os.chdir(r'/nesi/project/niwa00018/rampaln/High-res-interpretable-dl')
-#os.chdir(r'/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/high-resolution-downscaling/')
-os.chdir(r'./')
-# change directory to your repository of interest
-import tensorflow as tf
-from dask.diagnostics import ProgressBar
-import cmocean
-from models import train_model, complex_conv, simple_conv, predict, simple_dense, linear_complex_model
-from losses import gamma_loss_1d, gamma_mse_metric
-from prepare_data import format_features, prepare_training_dataset, create_test_train_split
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.logging_utils import add_file_handler, setup_logging
+from src.pipeline_utils import get_git_commit_sha, get_inference_dates, load_yaml_config
 
 
-tf.random.set_seed(2)
+LOGGER_NAME = "inference_ncp_mse"
 
 
-# In[6]:
-
-#wrkdir = '/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_HCLIM_CRM/'
-
-#variable = 'mrsol'
-variable = 'tas'
-wrkdir = '/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_HCLIM_CRM_T_withSM_whus/'
-wrkdir_inf = f'03-inference_comp/'
-#dir_fuxing ="/nobackup/rossby27/users/sm_fuxwa/AI_data/3km/6hr/pr/")
-dir_fuxing ='training_data_fuxing/'
-
-dir_fuxing_org = '/nobackup/rossby27/users/sm_fuxwa/AI_data/Emilia_Romagna/3km/6hr/tas/'
-#dir_fuxing_org = '/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_HCLIM_CRM_T_withSM_whus/training_data_fuxing/Emilia_Romagna/'
-#y_file = "pr_3km_6hr_200001010300-200912312100.nc"
-#y_file = f"{variable}_3km_6hr_200001010000-200912311800_swapped_2003_2009.nc"
-#x_file = "combined_12km_6hr_20000101-20091231_swapped_2003_2009.nc"
-y_file = f"{variable}_3km_6hr_200001010000-200912311800.nc"
-x_file = f"combined_12km_6hr_20000101-20091231.nc"
-
-
-# here is where we select where the input and output data is the features we want to use
-config = dict(#y = wrkdir+"training_data/topography_subset.nc",
-              #X = wrkdir+"training_data/ERA5_training_dataset_6_3_23_bilinear_half_degree.nc",
-#              y = wrkdir+"training_data_hclim/interpolated_pr_combined_2010-2018.nc",
-#              X = wrkdir+"training_data_ncp/combined_variables_2010-2018.nc",
-             y = dir_fuxing_org+y_file,
-             X = wrkdir+dir_fuxing+x_file,
-             train_start = "2000-01-01",
-             train_end  = "2007-12-31",
-             val_start  = "2008-01-01",
-             val_end    = "2008-12-31",
-             test_start = "2009-01-01",
-             test_end   = "2009-12-31",
-             output_var = [variable],
-             #downscale_variables = ['w_850', 'u_850',
-             #'v_850', 'q_850', 't_850'])
-             #downscale_variables = ['hus850', 'sfcWind', 'psl', 'zg500'])
-             #downscale_variables = ['phi500','phi700','phi850','phi950','ta500','ta700','ta850','ta950','ua500','ua700','ua850','ua950','va500','va700','va850','va950','mrsol'])
-             downscale_variables = ['phi500','phi700','phi850','phi950','ta500','ta700','ta850','ta950','ua500','ua700','ua850','ua950','va500','va700','va850','va950','hus500','hus700','hus850','hus950','mrsol'])
-# you can modify any of the above features
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run ML inference with YAML config")
+    parser.add_argument(
+        "config_file",
+        type=str,
+        nargs="?",
+        default="config.yaml",
+        help="Path to the yaml configuration file",
+    )
+    parser.add_argument(
+        "--model-file",
+        type=str,
+        help="Path to the trained model .h5 file. Overrides inference.model_file in YAML.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        help="Directory for inference artifacts. Overrides inference.output_dir in YAML.",
+    )
+    parser.add_argument(
+        "--smoke-test-imports",
+        action="store_true",
+        help="Validate script/module imports without loading data or running inference.",
+    )
+    return parser.parse_args()
 
 
-# # Loading the Training Data
-# Here we load the training data from a configuration file and prepare it for training DL models
-
-# create a data split for train, test, and validation
-x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(config)
-
-#outscale = 86400. # for rainfall
-outscale = 1. # for temperature
-y_train = y_train*outscale
-y_val   = y_val*outscale
-y_test  = y_test*outscale
-
-print(x_test.dims)
-print(x_test.coords)
-print(x_test)
-
-####### read in 
-downscale_variables = [
-    'phi500', 'phi700', 'phi850', 'phi950',
-    'ta500', 'ta700', 'ta850', 'ta950',
-    'ua500', 'ua700', 'ua850', 'ua950',
-    'va500', 'va700', 'va850', 'va950',
-    'hus500', 'hus700', 'hus850', 'hus950',
-    'mrsol'
-]
-
-#### normalized 
-# Compute Mean and Standard Deviation from Training Data
-train_mean = y_train.mean(dim="time")
-train_std = y_train.std(dim="time")
-
-# Standardization (Z-score normalization)
-#y_train_stded = (y_train - train_mean) / train_std
-#y_val_stded   = (y_val - train_mean) / train_std
-y_test_stded  = (y_test - train_mean) / train_std
-
-#y_train = y_train_stded
-#y_val   = y_val_stded
-#y_test  = y_test_stded
-### normalized
+def resolve_cli_path(path_argument: str) -> Path:
+    path = Path(path_argument)
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    return path
 
 
-# load the training data
-x_train, x_test, x_val, y_train, y_test, y_val = prepare_training_dataset(x_train, x_val, x_test, y_train, y_val, y_test)      
-
-# modify the training data so that it is compatible with tensorflow and training
-x_train = x_train.values if isinstance(x_train, xr.DataArray) else x_train
-y_train = y_train.values if isinstance(y_train, xr.DataArray) else y_train
-y_train = y_train.to_array().values if isinstance(y_train, xr.Dataset) else y_train
-
-#print(type(x_train))
-#print(type(y_train))
-
-##########################################
-# Load existing model for Inference
-##########################################
-print(f'Read in ')
-# For MSE is built in for metrics and error, there is no need to assign custom_object.
-#simple_cnn = tf.keras.models.load_model(f'01-model/cnn_mse_model_with_new_training_period.h5')
-simple_cnn = tf.keras.models.load_model(f'01-model/linear_mse_model_with_new_training_period_normal2009.h5')
-
-# Show the model architecture
-simple_cnn.summary()
-#loss, acc = simple_cnn.evaluate(x_test, y_test, verbose=2)
-#print('Restored model, accuracy: {:5.2f}%'.format(100 * acc))
-
-# # Inference for MSE LOss
-simple_cnn_prediction = predict(simple_cnn, x_test, y_test, 
-                                batch_size=32, key =variable, pred_name ="test", 
-                                loss ='mse' , thres =0.5)
-
-simple_cnn_prediction = simple_cnn_prediction.unstack()
-# Ensure train_mean and train_std have the same dimensions as the test data
-train_mean_aligned    = train_mean.broadcast_like(simple_cnn_prediction.test)
-train_std_aligned     = train_std.broadcast_like(simple_cnn_prediction.test)
-simple_cnn_prediction = (simple_cnn_prediction * train_std_aligned) + train_mean_aligned
-
-# Specify the output file name
-#time_encoding = {'time': {'dtype': 'float64', 'units': 'hours since 2009-01-01 03:00:00', 'calendar': 'proleptic_gregorian'}} # for rainfall
-time_encoding = {'time': {'dtype': 'float64', 'units': 'hours since 2009-01-01 00:00:00', 'calendar': 'proleptic_gregorian'}} # for tas
-output_file = "simple_cnn_prediction_normalized_normal2009.nc"
-simple_cnn_prediction.to_netcdf(wrkdir_inf+output_file, encoding=time_encoding)
-print(f"Predictions saved to {output_file}")
-print(simple_cnn_prediction.time)
-
-#simple_dense_prediciton = predict(linear_model, x_test, y_test, 
-#                                  batch_size=32, key ='pr', pred_name ="test", 
-#                                  loss ='mse' , thres =0.5)
-#simple_dense_prediciton = simple_dense_prediciton.unstack()
-# +++ Yi-Chi: Feb 2025
-#simple_dense_prediciton = simple_dense_prediciton.reindex(
-#                            lon = sorted(simple_dense_prediciton.lon.values))
-# --- Yi-Chi
-
-# Specify the output file name
-#output_file = "simple_dense_prediction.nc"
-#simple_dense_prediciton.to_netcdf(output_file)
-#print(f"Predictions saved to {output_file}")
+def resolve_path_from_config_dir(config_dir: Path, raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return (config_dir / path).resolve()
 
 
-# Save the ground truth and calculate correction
-gt = y_test.unstack()
-#gt = gt.reindex(lon = sorted(gt.lon.values))
+def resolve_inference_model_path(raw_cfg: dict, config_dir: Path, args: argparse.Namespace) -> Path:
+    if args.model_file:
+        model_path = resolve_cli_path(args.model_file)
+    else:
+        model_file = raw_cfg.get("inference", {}).get("model_file")
+        if model_file:
+            model_path = resolve_path_from_config_dir(config_dir, model_file)
+        else:
+            raise ValueError("Inference requires --model-file or inference.model_file in the YAML config.")
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model file does not exist: {model_path}")
+    return model_path
 
 
-# # Correlation Coefficient in Time Evalation
-corrs2 = xr.corr(gt, simple_cnn_prediction.test, dim ="time")
-print(f'correlation coefficient: {corrs2.mean(["x","y"])}')
-# the average correlation coefficient
-# Compute Mean Absolute Error (MAE)
-mae = np.abs(gt - simple_cnn_prediction.test).mean(dim="time")
-print(f'mean absolute error: {mae.mean(["x","y"])}')
+def resolve_inference_output_dir(raw_cfg: dict, config_dir: Path, args: argparse.Namespace, variable: str) -> Path:
+    if args.output_dir:
+        return resolve_cli_path(args.output_dir)
 
-# Compute Root Mean Squared Error (RMSE)
-rmse = np.sqrt(((gt - simple_cnn_prediction.test) ** 2).mean(dim="time"))
-print(f'RMSE: {rmse.mean(["x","y"])}')
+    configured = raw_cfg.get("inference", {}).get("output_dir")
+    if configured:
+        return resolve_path_from_config_dir(config_dir, configured)
 
-std_dev_gt = gt.std(dim="time")
-print(f'standard deviation of truth: {std_dev_gt.mean(["x","y"])}')
-
-std_dev_pred = (simple_cnn_prediction.test).std(dim="time")
-print(f'standard deviation of prediction: {std_dev_pred.mean(["x","y"])}')
-
-# ==================
-# 1. Calculate the scalar mean values for each metric
-# We use .item() to get the actual number out of the xarray/numpy object
-results = {
-    "metric": ["correlation", "mae", "rmse", "std_dev_truth", "std_dev_pred"],
-    "value": [
-        corrs2.mean(["x", "y"]).item(),
-        mae.mean(["x", "y"]).item(),
-        rmse.mean(["x", "y"]).item(),
-        std_dev_gt.mean(["x", "y"]).item(),
-        std_dev_pred.mean(["x", "y"]).item()
-    ]
-}
-
-# 2. Create a DataFrame
-df_metrics = pd.DataFrame(results)
-
-# 3. Save to CSV
-df_metrics.to_csv("evaluation_metrics_normal2009.csv", index=False)
-
-print("Metrics successfully saved to evaluation_metrics.csv")
+    return (config_dir / "output" / "inference" / variable).resolve()
 
 
+def load_inference_dependencies() -> dict[str, object]:
+    import numpy as np
+    import pandas as pd
+    import tensorflow as tf
+    import xarray as xr
+
+    from src.models import predict
+    from src.prepare_data import create_test_train_split, prepare_training_dataset
+
+    return {
+        "np": np,
+        "pd": pd,
+        "tf": tf,
+        "xr": xr,
+        "predict": predict,
+        "create_test_train_split": create_test_train_split,
+        "prepare_training_dataset": prepare_training_dataset,
+    }
+
+
+def build_experiment_configuration(raw_cfg: dict, config_dir: Path) -> tuple[dict, dict]:
+    work_dir = resolve_path_from_config_dir(config_dir, raw_cfg["paths"]["work_dir"])
+    data_train_dir_raw = Path(raw_cfg["paths"]["data_train_dir"])
+    data_infer_dir_raw = Path(raw_cfg["paths"]["data_infer_dir"])
+    variable = raw_cfg["experiment"]["variable"]
+
+    if data_train_dir_raw.is_absolute():
+        data_train_dir = data_train_dir_raw
+    else:
+        data_train_dir = (work_dir / data_train_dir_raw).resolve()
+
+    if data_infer_dir_raw.is_absolute():
+        data_infer_dir = data_infer_dir_raw
+    else:
+        data_infer_dir = resolve_path_from_config_dir(config_dir, raw_cfg["paths"]["data_infer_dir"])
+
+    y_file = raw_cfg["experiment"]["y_filename_template"].format(variable=variable)
+    x_file = raw_cfg["experiment"]["x_filename"]
+
+    exp_config = {
+        "y": str((data_infer_dir / y_file).resolve()),
+        "X": str((data_train_dir / x_file).resolve()),
+        "train_start": raw_cfg["experiment"]["dates"]["train"][0],
+        "train_end": raw_cfg["experiment"]["dates"]["train"][1],
+        "val_start": raw_cfg["experiment"]["dates"]["val"][0],
+        "val_end": raw_cfg["experiment"]["dates"]["val"][1],
+        "test_start": raw_cfg["experiment"]["dates"]["test"][0],
+        "test_end": raw_cfg["experiment"]["dates"]["test"][1],
+        "output_var": [variable],
+        "downscale_variables": raw_cfg["experiment"]["downscale_variables"],
+    }
+    resolved_paths = {
+        "work_dir": work_dir,
+        "data_train_dir": data_train_dir,
+        "data_infer_dir": data_infer_dir,
+        "predictor_file": Path(exp_config["X"]),
+        "target_file": Path(exp_config["y"]),
+    }
+    return exp_config, resolved_paths
+
+
+def build_inference_output_paths(
+    raw_cfg: dict,
+    config_dir: Path,
+    args: argparse.Namespace,
+    variable: str,
+) -> dict[str, Path | str]:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    inference_cfg = raw_cfg.get("inference", {})
+    run_name = inference_cfg.get("run_name", f"{variable}_test")
+    output_dir = resolve_inference_output_dir(raw_cfg, config_dir, args, variable)
+    log_root = resolve_path_from_config_dir(config_dir, raw_cfg["training"]["log_root"])
+    diagnostic_log_file = (log_root / "diagnostic" / "inference" / run_name / f"inference_{timestamp}.log").resolve()
+    prediction_file = (output_dir / inference_cfg.get("prediction_filename", "prediction.nc")).resolve()
+    metrics_file = (output_dir / inference_cfg.get("metrics_filename", "evaluation_metrics.csv")).resolve()
+    config_backup_path = (output_dir / "config_backup.yaml").resolve()
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    diagnostic_log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "timestamp": timestamp,
+        "run_name": run_name,
+        "output_dir": output_dir,
+        "diagnostic_log_file": diagnostic_log_file,
+        "prediction_file": prediction_file,
+        "metrics_file": metrics_file,
+        "config_backup_path": config_backup_path,
+    }
+
+
+def summarize_time_axis(data) -> tuple[str, str, int]:
+    time_values = data["time"].values
+    return str(time_values[0]), str(time_values[-1]), int(data.sizes["time"])
+
+
+def count_missing_values(data) -> int:
+    if hasattr(data, "data_vars"):
+        return int(sum(int(data[name].isnull().sum().item()) for name in data.data_vars))
+    return int(data.isnull().sum().item())
+
+
+def log_runtime_context(logger: logging.Logger, config_path: Path | None, tf_module=None) -> None:
+    logger.info("Command line: %s", subprocess.list2cmdline(sys.argv))
+    logger.info("Current working directory: %s", Path.cwd())
+    logger.info("Resolved script directory: %s", SCRIPT_DIR)
+    logger.info("Resolved project root: %s", PROJECT_ROOT)
+    logger.info("Python executable: %s", sys.executable)
+    logger.info("Python version: %s", sys.version.replace("\n", " "))
+    logger.info("Hostname: %s", platform.node())
+    logger.info("Git commit SHA: %s", get_git_commit_sha(PROJECT_ROOT) or "unavailable")
+    logger.info("SLURM job ID: %s", os.getenv("SLURM_JOB_ID", "not set"))
+    logger.info("SLURM array task ID: %s", os.getenv("SLURM_ARRAY_TASK_ID", "not set"))
+    if config_path is not None:
+        logger.info("Configuration path: %s", config_path)
+    if tf_module is not None:
+        logger.info("TensorFlow version: %s", getattr(tf_module, "__version__", "unknown"))
+        try:
+            gpu_devices = tf_module.config.list_physical_devices("GPU")
+            logger.info("Visible GPU devices: %s", [device.name for device in gpu_devices] or [])
+        except Exception:
+            logger.warning("Could not list TensorFlow GPU devices.", exc_info=True)
+
+
+def run_import_smoke_test(logger: logging.Logger) -> int:
+    load_inference_dependencies()
+    logger.info("Inference smoke test imports completed successfully.")
+    return 0
+
+
+def build_time_encoding(prediction_time_values, variable_name: str) -> dict:
+    first_timestamp = str(prediction_time_values[0]).replace("T", " ").split(".")[0]
+    return {
+        "time": {
+            "dtype": "float64",
+            "units": f"hours since {first_timestamp}",
+            "calendar": "proleptic_gregorian",
+        },
+        variable_name: {},
+    }
+
+
+def main() -> int:
+    args = parse_args()
+    bootstrap_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    bootstrap_log_file = (PROJECT_ROOT / "output" / "logs" / "bootstrap" / f"inference_bootstrap_{bootstrap_timestamp}.log").resolve()
+    logger = setup_logging(bootstrap_log_file, logger_name=LOGGER_NAME)
+    logger.info("Bootstrap log file: %s", bootstrap_log_file)
+
+    if args.smoke_test_imports:
+        return run_import_smoke_test(logger)
+
+    config_path = resolve_cli_path(args.config_file)
+    raw_cfg, _ = load_yaml_config(str(config_path))
+
+    dependencies = load_inference_dependencies()
+    np = dependencies["np"]
+    pd = dependencies["pd"]
+    tf = dependencies["tf"]
+    xr = dependencies["xr"]
+    predict = dependencies["predict"]
+    create_test_train_split = dependencies["create_test_train_split"]
+    prepare_training_dataset = dependencies["prepare_training_dataset"]
+
+    tf.random.set_seed(2)
+
+    exp_config, resolved_paths = build_experiment_configuration(raw_cfg, config_path.parent)
+    variable = raw_cfg["experiment"]["variable"]
+    model_file = resolve_inference_model_path(raw_cfg, config_path.parent, args)
+    output_paths = build_inference_output_paths(raw_cfg, config_path.parent, args, variable)
+    add_file_handler(logger, output_paths["diagnostic_log_file"])
+
+    shutil.copy2(config_path, output_paths["config_backup_path"])
+    logger.info("Configuration backup saved to %s", output_paths["config_backup_path"])
+    log_runtime_context(logger, config_path, tf_module=tf)
+    logger.info("Inference run name: %s", output_paths["run_name"])
+    logger.info("Target variable: %s", variable)
+    logger.info("Inference dates: %s", get_inference_dates(raw_cfg))
+    logger.info("Predictor variable list and order: %s", raw_cfg["experiment"]["downscale_variables"])
+    logger.info("Resolved predictor path: %s", resolved_paths["predictor_file"])
+    logger.info("Resolved target path: %s", resolved_paths["target_file"])
+    logger.info("Resolved model file: %s", model_file)
+    logger.info("Resolved output directory: %s", output_paths["output_dir"])
+    logger.info("Resolved prediction file: %s", output_paths["prediction_file"])
+    logger.info("Resolved metrics file: %s", output_paths["metrics_file"])
+    logger.info("Resolved diagnostic log path: %s", output_paths["diagnostic_log_file"])
+
+    x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(exp_config)
+    x_test_first, x_test_last, x_test_count = summarize_time_axis(x_test)
+    y_test_first, y_test_last, y_test_count = summarize_time_axis(y_test)
+    logger.info("Predictor test timestamps: first=%s last=%s", x_test_first, x_test_last)
+    logger.info("Target test timestamps: first=%s last=%s", y_test_first, y_test_last)
+    logger.info(
+        "Split sample counts: train=%s val=%s test=%s",
+        x_train.sizes["time"],
+        x_val.sizes["time"],
+        x_test.sizes["time"],
+    )
+    logger.info("Aligned predictor test samples: %s", x_test_count)
+    logger.info("Aligned target test samples: %s", y_test_count)
+    logger.info("Predictor missing values: %s", count_missing_values(x_test))
+    logger.info("Target missing values: %s", count_missing_values(y_test))
+
+    outscale = 1.0
+    y_train = y_train * outscale
+    y_val = y_val * outscale
+    y_test = y_test * outscale
+
+    train_mean = y_train.mean(dim="time")
+    train_std = y_train.std(dim="time")
+
+    _x_train_ready, x_test_ready, _x_val_ready, _y_train_ready, y_test_ready, _y_val_ready = prepare_training_dataset(
+        x_train,
+        x_val,
+        x_test,
+        y_train,
+        y_val,
+        y_test,
+    )
+    logger.info("Prepared predictor array shape: %s", x_test_ready.shape)
+    logger.info("Prepared target array shape: %s", y_test_ready.shape)
+    logger.info("Input channel count: %s", x_test_ready.shape[-1])
+    logger.info("Flattened target grid points: %s", y_test_ready.z.size)
+
+    x_test_values = x_test_ready.values if isinstance(x_test_ready, xr.DataArray) else x_test_ready
+
+    logger.info("Loading model from %s", model_file)
+    model = tf.keras.models.load_model(str(model_file))
+    model.summary(print_fn=logger.info)
+
+    prediction_ds = predict(
+        model,
+        x_test_values,
+        y_test_ready,
+        batch_size=int(raw_cfg.get("inference", {}).get("batch_size", 32)),
+        key=variable,
+        pred_name=variable,
+        loss="mse",
+        thres=0.5,
+    ).unstack()
+
+    train_mean_aligned = train_mean.broadcast_like(prediction_ds[variable])
+    train_std_aligned = train_std.broadcast_like(prediction_ds[variable])
+    prediction_ds[variable] = (prediction_ds[variable] * train_std_aligned) + train_mean_aligned
+
+    time_encoding = build_time_encoding(prediction_ds.time.values, variable)
+    prediction_ds.to_netcdf(output_paths["prediction_file"], encoding=time_encoding)
+    logger.info("Prediction saved to %s", output_paths["prediction_file"])
+
+    ground_truth = y_test_ready.unstack()
+    prediction_array = prediction_ds[variable]
+    correlation = xr.corr(ground_truth, prediction_array, dim="time")
+    mae = np.abs(ground_truth - prediction_array).mean(dim="time")
+    rmse = np.sqrt(((ground_truth - prediction_array) ** 2).mean(dim="time"))
+    std_dev_truth = ground_truth.std(dim="time")
+    std_dev_pred = prediction_array.std(dim="time")
+
+    mean_dims = [dim for dim in ("x", "y") if dim in correlation.dims]
+    if not mean_dims:
+        raise ValueError("Could not determine spatial dimensions for inference metrics.")
+
+    metrics_df = pd.DataFrame(
+        {
+            "metric": ["correlation", "mae", "rmse", "std_dev_truth", "std_dev_pred"],
+            "value": [
+                correlation.mean(mean_dims).item(),
+                mae.mean(mean_dims).item(),
+                rmse.mean(mean_dims).item(),
+                std_dev_truth.mean(mean_dims).item(),
+                std_dev_pred.mean(mean_dims).item(),
+            ],
+        }
+    )
+    metrics_df.to_csv(output_paths["metrics_file"], index=False)
+    logger.info("Metrics saved to %s", output_paths["metrics_file"])
+    logger.info("Inference completed successfully.")
+    return 0
+
+
+if __name__ == "__main__":
+    logger = logging.getLogger(LOGGER_NAME)
+    try:
+        raise SystemExit(main())
+    except Exception:
+        logger.exception("Inference failed")
+        raise
