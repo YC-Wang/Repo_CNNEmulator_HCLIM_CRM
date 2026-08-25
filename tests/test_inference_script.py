@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = REPO_ROOT / "scripts" / "inference_ncp_mse_normalized_mrsol_normal2009.py"
+SCRIPT_PATH = REPO_ROOT / "scripts" / "inference_ncp_mse.py"
 
 
 def write_tensorflow_stub(root: Path) -> None:
@@ -74,7 +74,7 @@ class InferenceScriptSmokeTests(unittest.TestCase):
     def test_smoke_imports_from_scripts_directory(self) -> None:
         result = self.run_smoke_test(
             cwd=REPO_ROOT / "scripts",
-            command=[sys.executable, "inference_ncp_mse_normalized_mrsol_normal2009.py", "--smoke-test-imports"],
+            command=[sys.executable, "inference_ncp_mse.py", "--smoke-test-imports"],
         )
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("Inference smoke test imports completed successfully.", result.stdout + result.stderr)

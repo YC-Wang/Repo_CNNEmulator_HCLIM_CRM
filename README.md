@@ -10,7 +10,7 @@ This repository contains the CNN-based temperature and precipitation emulator wo
 ## Main Entry Points
 
 - Training: `scripts/training_ncp_mse.py`
-- Inference: `scripts/inference_ncp_mse_normalized_mrsol_normal2009.py`
+- Inference: `scripts/inference_ncp_mse.py`
 
 Both scripts accept a positional YAML config path and can be launched either from the repository root or from the `scripts/` directory.
 
@@ -77,25 +77,25 @@ Training writes:
 Run inference with the same YAML configuration style used by training:
 
 ```bash
-python scripts/inference_ncp_mse_normalized_mrsol_normal2009.py exp1_normal_withT.yaml --model-file /path/to/model.h5
+python scripts/inference_ncp_mse.py exp1_normal_withT.yaml --model-file /path/to/model.h5
 ```
 
 If the YAML includes `inference.model_file`, the CLI override is optional:
 
 ```bash
-python scripts/inference_ncp_mse_normalized_mrsol_normal2009.py exp1_normal_withT.yaml
+python scripts/inference_ncp_mse.py exp1_normal_withT.yaml
 ```
 
 From inside `scripts/`:
 
 ```bash
-python inference_ncp_mse_normalized_mrsol_normal2009.py ../exp1_normal_withT.yaml --model-file /path/to/model.h5
+python inference_ncp_mse.py ../exp1_normal_withT.yaml --model-file /path/to/model.h5
 ```
 
 Import-only smoke test:
 
 ```bash
-python scripts/inference_ncp_mse_normalized_mrsol_normal2009.py --smoke-test-imports
+python scripts/inference_ncp_mse.py --smoke-test-imports
 ```
 
 Inference writes:
