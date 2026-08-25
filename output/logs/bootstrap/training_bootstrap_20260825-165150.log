@@ -1,0 +1,49 @@
+2026-08-25 16:51:50 | INFO | training_ncp_mse | Bootstrap log file: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM/output/logs/bootstrap/training_bootstrap_20260825-165150.log
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Configuration backup saved to /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/output/logs/cnn/20260825-1651_cnn_tas_exp1_heatwave_withT/config_backup.yaml
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Command line: scripts/training_ncp_mse.py exp1_normal_withT.yaml
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Current working directory: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Resolved script directory: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM/scripts
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Resolved project root: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Python executable: /home/sm_yicwa/.conda/envs/high_res_env/bin/python
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Python version: 3.8.19 | packaged by conda-forge | (default, Mar 20 2024, 12:47:35)  [GCC 12.3.0]
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Hostname: freja1.nsc.liu.se
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Git commit SHA: 7e73ad60406654a3896eb1000cb370e5f7f82411
+2026-08-25 16:51:53 | INFO | training_ncp_mse | SLURM job ID: not set
+2026-08-25 16:51:53 | INFO | training_ncp_mse | SLURM array task ID: not set
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Configuration path: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM/exp1_normal_withT.yaml
+2026-08-25 16:51:53 | INFO | training_ncp_mse | TensorFlow version: 2.12.1
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Visible GPU devices: []
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Experiment ID: 20260825-1651_cnn_tas_exp1_heatwave_withT
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Experiment tag: exp1_heatwave_withT
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Target variable: tas
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Predictor variable list and order: ['phi500', 'phi700', 'phi850', 'phi950', 'ta500', 'ta700', 'ta850', 'ta950', 'ua500', 'ua700', 'ua850', 'ua950', 'va500', 'va700', 'va850', 'va950', 'hus500', 'hus700', 'hus850', 'hus950', 'tas', 'mrsol']
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Training period: ['2000-01-01', '2007-12-31']
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Validation period: ['2008-01-01', '2008-12-31']
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Test period: ['2009-01-01', '2009-12-31']
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Resolved predictor path: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_HCLIM_CRM_T_withSM_whus/training_data_fuxing/combined_12km_6hr_20000101-20091231_swapped_2003_2009.nc
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Resolved target path: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_HCLIM_CRM_T_withSM_whus/training_data_fuxing/Emilia_Romagna/tas_3km_6hr_200001010000-200912311800_swapped_2003_2009.nc
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Resolved model-output path: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/output/models/20260825-1651_cnn_tas_exp1_heatwave_withT.h5
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Resolved TensorBoard log path: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/output/logs/cnn/20260825-1651_cnn_tas_exp1_heatwave_withT
+2026-08-25 16:51:53 | INFO | training_ncp_mse | Resolved diagnostic log path: /nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/output/logs/diagnostic/cnn/20260825-1651_cnn_tas_exp1_heatwave_withT/training.log
+2026-08-25 16:51:59 | ERROR | training_ncp_mse | Training failed
+Traceback (most recent call last):
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/core/dataset.py", line 1310, in _copy_listed
+    variables[name] = self._variables[name]
+KeyError: 'tas'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "scripts/training_ncp_mse.py", line 366, in <module>
+    raise SystemExit(main())
+  File "scripts/training_ncp_mse.py", line 250, in main
+    x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(exp_config)
+  File "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Repo_CNNEmulator_HCLIM_CRM/src/prepare_data.py", line 23, in create_test_train_split
+    X = xr.open_dataset(config["X"], chunks = {"time":3000})[config["downscale_variables"]]
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/core/dataset.py", line 1441, in __getitem__
+    return self._copy_listed(key)
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/core/dataset.py", line 1312, in _copy_listed
+    ref_name, var_name, var = _get_virtual_variable(
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/core/dataset.py", line 186, in _get_virtual_variable
+    raise KeyError(key)
+KeyError: 'tas'
