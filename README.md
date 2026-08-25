@@ -71,6 +71,12 @@ python scripts/train.py
 
 # Run using a specific versioned configuration
 python scripts/train.py configs/test_v2.yaml
+python scripts/training_ncp_mse.py exp1_normal_withT.yaml
+
+Relative configuration arguments are resolved from the caller's current working directory. Relative paths inside the YAML are resolved consistently from the configuration file location, while absolute HPC paths are preserved unchanged.
+
+Plain-text diagnostic logs are written separately from TensorBoard event logs under the configured log root, with an early bootstrap log under `output/logs/bootstrap/`. Failed-run diagnostic logs capture the command line, key resolved paths, runtime metadata, and the full traceback.
+
 📊 Outputs & Reproducibility
 Automated Experiment Tracking
 Every execution generates a unique Experiment ID (YYYYMMDD-HHMM_model_var_tag_jobID).
