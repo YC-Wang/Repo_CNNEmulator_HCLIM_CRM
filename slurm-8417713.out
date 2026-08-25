@@ -1,0 +1,79 @@
+***********************************
+You have loaded a Mambaforge module
+***********************************
+
+JUST LOADING THIS MODULE DOES *NOT* CHANGE THE PYTHON VERSION, NOR ENABLES ANY
+EXTRA PYTHON MODULES.
+
+This module makes available the 'mamba' and 'conda' commands from the miniforge
+Mambaforge distribution,
+with which users can create named anaconda-like environments and then activate
+them.
+
+To create and use a customized environment use 'mamba create ...' and
+then 'mamba activate ...' (see example below).
+
+---------------------------------------------------------------------------------------------------
+NOTE: NSC strongly advices against placing 'mamba activate' (or 'conda
+activate', with or without
+      arguments) in your shell initialization files, (e.g. '.bashrc' or
+'.bash_profile') since
+      this severly alters the environment for running software in ways that
+cause unpredictable
+      issues that can be difficult to diagnose.
+---------------------------------------------------------------------------------------------------
+
+Example usage:
+
+  * Setting up a customized environment and run a Python program in it:
+
+    mamba create -n myenv python=3.8 scipy=1.5.2
+    mamba activate myenv
+    python my_scipy_python_program.py
+
+  * To run the python program in the same environment when logging in the next
+time:
+
+    mabma activate myenv
+    python my_scipy_python_program.py
+
+The miniforge Mambaforge distribution aims to be command-line compatible with
+Anaconda.
+More details on Anaconda environment management are available here:
+
+
+https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html
+
+
+2026-08-19 15:32:38.695677: I tensorflow/core/util/port.cc:110] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-08-19 15:32:39.227436: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE4.1 SSE4.2 AVX AVX2 AVX512F AVX512_VNNI AVX512_BF16 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Time alignment summary before intersection
+predictor-original: first=2000-01-01 00:00:00, last=2009-12-31 18:00:00, freq=6H
+predictor-adjusted: first=2000-01-01 03:00:00, last=2009-12-31 21:00:00, freq=6H
+target: first=2000-01-01 03:00:00, last=2009-12-31 21:00:00, freq=6H
+Time alignment summary after intersection
+common timestamps=14612, first=2000-01-01 03:00:00, last=2009-12-31 21:00:00, unique_hours=[3, 9, 15, 21]
+ 1/46 [..............................] - ETA: 13s 7/46 [===>..........................] - ETA: 0s 14/46 [========>.....................] - ETA: 0s21/46 [============>.................] - ETA: 0s28/46 [=================>............] - ETA: 0s35/46 [=====================>........] - ETA: 0s42/46 [==========================>...] - ETA: 0s46/46 [==============================] - 1s 8ms/step
+Source target units: kg m-2 s-1
+Saved output units mode: scaled
+Traceback (most recent call last):
+  File "scripts/inference_ncp_mse.py", line 218, in <module>
+    raise SystemExit(main())
+  File "scripts/inference_ncp_mse.py", line 199, in main
+    prediction.to_dataset(name=prediction.name).to_netcdf(output_file)
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/core/dataset.py", line 1912, in to_netcdf
+    return to_netcdf(  # type: ignore  # mypy cannot resolve the overloads:(
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/api.py", line 1232, in to_netcdf
+    dump_to_store(
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/api.py", line 1279, in dump_to_store
+    store.store(variables, attrs, check_encoding, writer, unlimited_dims=unlimited_dims)
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/common.py", line 270, in store
+    self.set_variables(
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/common.py", line 308, in set_variables
+    target, source = self.prepare_variable(
+  File "/home/sm_yicwa/.conda/envs/high_res_env/lib/python3.8/site-packages/xarray/backends/netCDF4_.py", line 503, in prepare_variable
+    nc4_var.setncatts(attrs)
+  File "src/netCDF4/_netCDF4.pyx", line 4641, in netCDF4._netCDF4.Variable.setncatts
+  File "src/netCDF4/_netCDF4.pyx", line 1838, in netCDF4._netCDF4._set_att
+TypeError: illegal data type for attribute b'negative_rainfall_clipping_applied', must be one of dict_keys(['S1', 'i1', 'u1', 'i2', 'u2', 'i4', 'u4', 'i8', 'u8', 'f4', 'f8']), got b1

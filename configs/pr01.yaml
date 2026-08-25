@@ -1,12 +1,12 @@
 metadata:
-  experiment_id: "pr_example"
-  dataset_version: "FPS_HCLIM43_INTERIM"
-  notes: "Standardized precipitation CNN with MSE"
+  experiment_id: "ERAI-HI2HI"
+  dataset_version: "ERAI_to_HCLIM_HI"
+  notes: "ERAI-HI2HI precipitation CNN with MSE"
 
 paths:
-  predictor_file: "./data_sample/train_data/combined_12km_6hr_20000101-20091231.nc"
-  target_file: "./data_sample/infer_data/pr_3km_6hr_200001010300-200912312100.nc"
-  output_root: "./outputs"
+  predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_HCLIM_CRM_T_withSM_whus/training_data_fuxing/combined_12km_6hr_20000101-20091231.nc"
+  target_file: "/nobackup/rossby27/users/sm_fuxwa/AI_data/Emilia_Romagna/3km/6hr/pr/pr_3km_6hr_200001010300-200912312100.nc"
+  output_root: "../outputs"
 
 experiment:
   variable: "pr"

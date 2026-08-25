@@ -1,12 +1,12 @@
 metadata:
-  experiment_id: "pr_example"
-  dataset_version: "FPS_HCLIM43_INTERIM"
-  notes: "Standardized precipitation CNN with MSE"
+  experiment_id: "ECE-MC2MC"
+  dataset_version: "EC-Earth_MC_to_MC"
+  notes: "EC-Earth mid-century-to-mid-century precipitation CNN with MSE"
 
 paths:
-  predictor_file: "./data_sample/train_data/combined_12km_6hr_20000101-20091231.nc"
-  target_file: "./data_sample/infer_data/pr_3km_6hr_200001010300-200912312100.nc"
-  output_root: "./outputs"
+  predictor_file: "/nobackup/rossby27/users/sm_yicwa/PROJECTS/01-PROJ_emulator/01-rampal2021-unet/Emulator_ECEARTH_T_withSM_whus/training_data_fuxing_ecearth_withSM/combined_12km_6hr_204001010000-205012311800_wmrsol_whus.nc"
+  target_file: "/nobackup/rossby26/users/sm_fuxwa/AI/Emilia_Romagna/cropped/ICHEC-EC-EARTH_RCP85_MC/3km/6hr/pr/pr_3km_6hr_204001010300-205012312100.nc"
+  output_root: "../outputs"
 
 experiment:
   variable: "pr"
@@ -15,9 +15,9 @@ experiment:
   std_epsilon: 1.0e-6
   predictor_time_offset_hours: 3
   dates:
-    train: ["2000-01-01", "2007-12-31"]
-    val: ["2008-01-01", "2008-12-31"]
-    test: ["2009-01-01", "2009-12-31"]
+    train: ["2041-01-01", "2048-12-31"]
+    val: ["2049-01-01", "2049-12-31"]
+    test: ["2050-01-01", "2050-12-31"]
   downscale_variables:
     - phi500
     - phi700
