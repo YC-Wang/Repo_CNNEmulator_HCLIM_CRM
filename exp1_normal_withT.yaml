@@ -13,7 +13,7 @@ paths:
 # --- Data Selection ---
 experiment:
   variable: "tas"
-  x_filename: "combined_12km_6hr_20000101-20091231_swapped_2003_2009.nc"
+  x_filename: "combined_12km_6hr_20000101-20091231_swapped_2003_2009_withT.nc"
   y_filename_template: "{variable}_3km_6hr_200001010000-200912311800_swapped_2003_2009.nc"
   dates:
     train: ["2000-01-01", "2007-12-31"]
