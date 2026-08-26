@@ -19,7 +19,19 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.logging_utils import add_file_handler, setup_logging
-from src.pipeline_utils import get_git_commit_sha, load_yaml_config
+from src.pipeline_utils import (
+    build_failed_bootstrap_log_path,
+    build_legacy_split_config,
+    build_output_paths,
+    ensure_can_write_training_outputs,
+    get_config_warnings,
+    get_git_commit_sha,
+    get_experiment_dir,
+    load_yaml_config,
+    resolve_config_paths,
+    summarize_time_values,
+    write_yaml,
+)
 
 
 LOGGER_NAME = "training_ncp_mse"
@@ -35,6 +47,11 @@ def parse_args() -> argparse.Namespace:
         help="Path to the yaml configuration file",
     )
     parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow replacing an existing canonical best_model.h5 for this experiment.",
+    )
+    parser.add_argument(
         "--smoke-test-imports",
         action="store_true",
         help="Validate script/module imports without loading data or starting training.",
@@ -47,13 +64,6 @@ def resolve_cli_config_path(config_argument: str) -> Path:
     if not config_path.is_absolute():
         config_path = (Path.cwd() / config_path).resolve()
     return config_path
-
-
-def resolve_path_from_config_dir(config_dir: Path, raw_path: str) -> Path:
-    path = Path(raw_path)
-    if path.is_absolute():
-        return path
-    return (config_dir / path).resolve()
 
 
 def load_training_dependencies() -> dict[str, object]:
@@ -95,81 +105,8 @@ def count_zero_std_points(data, np_module) -> int:
     return int(np_module.isclose(std.fillna(-9999).values, 0.0).sum())
 
 
-def summarize_time_axis(data) -> tuple[str, str, int]:
-    time_values = data["time"].values
-    return str(time_values[0]), str(time_values[-1]), int(data.sizes["time"])
-
-
-def build_experiment_configuration(raw_cfg: dict, config_dir: Path) -> tuple[dict, dict]:
-    work_dir = resolve_path_from_config_dir(config_dir, raw_cfg["paths"]["work_dir"])
-    data_train_dir_raw = Path(raw_cfg["paths"]["data_train_dir"])
-    data_infer_dir_raw = Path(raw_cfg["paths"]["data_infer_dir"])
-    variable = raw_cfg["experiment"]["variable"]
-
-    if data_train_dir_raw.is_absolute():
-        data_train_dir = data_train_dir_raw
-    else:
-        data_train_dir = (work_dir / data_train_dir_raw).resolve()
-
-    if data_infer_dir_raw.is_absolute():
-        data_infer_dir = data_infer_dir_raw
-    else:
-        data_infer_dir = resolve_path_from_config_dir(config_dir, raw_cfg["paths"]["data_infer_dir"])
-
-    y_file = raw_cfg["experiment"]["y_filename_template"].format(variable=variable)
-    x_file = raw_cfg["experiment"]["x_filename"]
-
-    exp_config = {
-        "y": str((data_infer_dir / y_file).resolve()),
-        "X": str((data_train_dir / x_file).resolve()),
-        "train_start": raw_cfg["experiment"]["dates"]["train"][0],
-        "train_end": raw_cfg["experiment"]["dates"]["train"][1],
-        "val_start": raw_cfg["experiment"]["dates"]["val"][0],
-        "val_end": raw_cfg["experiment"]["dates"]["val"][1],
-        "test_start": raw_cfg["experiment"]["dates"]["test"][0],
-        "test_end": raw_cfg["experiment"]["dates"]["test"][1],
-        "output_var": [variable],
-        "downscale_variables": raw_cfg["experiment"]["downscale_variables"],
-    }
-    resolved_paths = {
-        "work_dir": work_dir,
-        "data_train_dir": data_train_dir,
-        "data_infer_dir": data_infer_dir,
-        "predictor_file": Path(exp_config["X"]),
-        "target_file": Path(exp_config["y"]),
-    }
-    return exp_config, resolved_paths
-
-
-def build_output_paths(raw_cfg: dict, config_dir: Path, variable: str) -> dict[str, Path | str]:
-    training_cfg = raw_cfg["training"]
-    model_cfg = raw_cfg["model"]
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-    model_type = training_cfg["model_type"]
-    tag = training_cfg["experiment_tag"]
-    exp_id = f"{timestamp}_{model_type}_{variable}_{tag}"
-    log_root = resolve_path_from_config_dir(config_dir, training_cfg["log_root"])
-    model_root = resolve_path_from_config_dir(config_dir, training_cfg["model_root"])
-    tensorboard_log_dir = (log_root / model_type / exp_id).resolve()
-    diagnostic_log_file = (log_root / "diagnostic" / model_type / exp_id / "training.log").resolve()
-    model_weights_path = (model_root / f"{exp_id}.h5").resolve()
-    config_backup_path = (tensorboard_log_dir / "config_backup.yaml").resolve()
-
-    tensorboard_log_dir.mkdir(parents=True, exist_ok=True)
-    diagnostic_log_file.parent.mkdir(parents=True, exist_ok=True)
-    model_weights_path.parent.mkdir(parents=True, exist_ok=True)
-
-    return {
-        "timestamp": timestamp,
-        "exp_id": exp_id,
-        "model_type": model_type,
-        "tensorboard_log_dir": tensorboard_log_dir,
-        "diagnostic_log_file": diagnostic_log_file,
-        "model_weights_path": model_weights_path,
-        "config_backup_path": config_backup_path,
-        "dense_activation": model_cfg["dense_activation"],
-        "cnn_activation": model_cfg["cnn_activation"],
-    }
+def summarize_time_axis(data) -> dict[str, str | int]:
+    return summarize_time_values(data["time"].values)
 
 
 def log_runtime_context(logger: logging.Logger, config_path: Path | None, tf_module=None) -> None:
@@ -200,18 +137,41 @@ def run_import_smoke_test(logger: logging.Logger) -> int:
     return 0
 
 
+def bootstrap_log_for_smoke_test(timestamp: str) -> Path:
+    path = (PROJECT_ROOT / "outputs" / "_smoke_test" / "logs" / "bootstrap" / f"training_smoke_test_{timestamp}.log").resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def main() -> int:
     args = parse_args()
-    bootstrap_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    bootstrap_log_file = (PROJECT_ROOT / "output" / "logs" / "bootstrap" / f"training_bootstrap_{bootstrap_timestamp}.log").resolve()
-    logger = setup_logging(bootstrap_log_file, logger_name=LOGGER_NAME)
-    logger.info("Bootstrap log file: %s", bootstrap_log_file)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
     if args.smoke_test_imports:
+        logger = setup_logging(bootstrap_log_for_smoke_test(timestamp), logger_name=LOGGER_NAME)
         return run_import_smoke_test(logger)
 
     config_path = resolve_cli_config_path(args.config_file)
-    raw_cfg, _ = load_yaml_config(str(config_path))
+    try:
+        raw_cfg, _ = load_yaml_config(str(config_path))
+    except Exception:
+        logger = setup_logging(build_failed_bootstrap_log_path(config_path, "training", timestamp), logger_name=LOGGER_NAME)
+        logger.exception("Failed to parse configuration.")
+        raise
+
+    resolved_cfg = resolve_config_paths(raw_cfg, config_path)
+    output_paths = build_output_paths(resolved_cfg)
+    logger = setup_logging(output_paths["bootstrap_log_dir"] / f"training_{timestamp}.log", logger_name=LOGGER_NAME)
+    add_file_handler(logger, output_paths["training_log_file"])
+
+    for warning_message in get_config_warnings(raw_cfg, resolved_cfg, config_path):
+        logger.warning(warning_message)
+
+    overwrite_existing = args.overwrite or bool(resolved_cfg["training"].get("overwrite_existing", False))
+    ensure_can_write_training_outputs(output_paths, overwrite_existing)
+
+    shutil.copy2(config_path, output_paths["input_config_backup"])
+    write_yaml(output_paths["resolved_config_file"], resolved_cfg)
 
     dependencies = load_training_dependencies()
     np = dependencies["np"]
@@ -226,33 +186,32 @@ def main() -> int:
 
     tf.random.set_seed(2)
 
-    exp_config, resolved_paths = build_experiment_configuration(raw_cfg, config_path.parent)
-    variable = raw_cfg["experiment"]["variable"]
-    output_paths = build_output_paths(raw_cfg, config_path.parent, variable)
-    add_file_handler(logger, output_paths["diagnostic_log_file"])
-
-    shutil.copy2(config_path, output_paths["config_backup_path"])
-    logger.info("Configuration backup saved to %s", output_paths["config_backup_path"])
     log_runtime_context(logger, config_path, tf_module=tf)
-    logger.info("Experiment ID: %s", output_paths["exp_id"])
-    logger.info("Experiment tag: %s", raw_cfg["training"]["experiment_tag"])
-    logger.info("Target variable: %s", variable)
-    logger.info("Predictor variable list and order: %s", raw_cfg["experiment"]["downscale_variables"])
-    logger.info("Training period: %s", raw_cfg["experiment"]["dates"]["train"])
-    logger.info("Validation period: %s", raw_cfg["experiment"]["dates"]["val"])
-    logger.info("Test period: %s", raw_cfg["experiment"]["dates"]["test"])
-    logger.info("Resolved predictor path: %s", resolved_paths["predictor_file"])
-    logger.info("Resolved target path: %s", resolved_paths["target_file"])
-    logger.info("Resolved model-output path: %s", output_paths["model_weights_path"])
-    logger.info("Resolved TensorBoard log path: %s", output_paths["tensorboard_log_dir"])
-    logger.info("Resolved diagnostic log path: %s", output_paths["diagnostic_log_file"])
+    logger.info("Experiment ID: %s", resolved_cfg["metadata"]["experiment_id"])
+    logger.info("Experiment directory: %s", get_experiment_dir(resolved_cfg))
+    logger.info("Target variable: %s", resolved_cfg["experiment"]["variable"])
+    logger.info("Predictor variable list and order: %s", resolved_cfg["experiment"]["downscale_variables"])
+    logger.info("Training period: %s", resolved_cfg["experiment"]["dates"]["train"])
+    logger.info("Validation period: %s", resolved_cfg["experiment"]["dates"]["val"])
+    logger.info("Test period: %s", resolved_cfg["experiment"]["dates"]["test"])
+    logger.info("Resolved predictor path: %s", resolved_cfg["paths"]["predictor_file"])
+    logger.info("Resolved target path: %s", resolved_cfg["paths"]["target_file"])
+    logger.info("Resolved config input backup: %s", output_paths["input_config_backup"])
+    logger.info("Resolved config output backup: %s", output_paths["resolved_config_file"])
+    logger.info("Resolved TensorBoard path: %s", output_paths["tensorboard_dir"])
+    logger.info("Resolved training diagnostic log: %s", output_paths["training_log_file"])
+    logger.info("Resolved bootstrap log directory: %s", output_paths["bootstrap_log_dir"])
+    logger.info("Resolved normalization mean file: %s", output_paths["normalization_mean_file"])
+    logger.info("Resolved normalization std file: %s", output_paths["normalization_std_file"])
+    logger.info("Resolved model file: %s", output_paths["model_file"])
 
+    exp_config = build_legacy_split_config(resolved_cfg, dates=resolved_cfg["experiment"]["dates"]["test"])
     x_train, x_val, x_test, y_train, y_val, y_test = create_test_train_split(exp_config)
-    x_train_first, x_train_last, aligned_train = summarize_time_axis(x_train)
-    y_train_first, y_train_last, _ = summarize_time_axis(y_train)
-    logger.info("Predictor timestamps: first=%s last=%s", x_train_first, x_train_last)
-    logger.info("Target timestamps: first=%s last=%s", y_train_first, y_train_last)
-    logger.info("Aligned training samples: %s", aligned_train)
+
+    x_train_summary = summarize_time_axis(x_train)
+    y_train_summary = summarize_time_axis(y_train)
+    logger.info("Predictor timestamps: first=%s last=%s timestep=%s count=%s", x_train_summary["first"], x_train_summary["last"], x_train_summary["timestep"], x_train_summary["count"])
+    logger.info("Target timestamps: first=%s last=%s timestep=%s count=%s", y_train_summary["first"], y_train_summary["last"], y_train_summary["timestep"], y_train_summary["count"])
     logger.info(
         "Split sample counts: train=%s val=%s test=%s",
         x_train.sizes["time"],
@@ -262,13 +221,17 @@ def main() -> int:
     logger.info("Predictor missing values: %s", count_missing_values(x_train))
     logger.info("Target missing values: %s", count_missing_values(y_train))
 
-    outscale = 1.0
+    outscale = float(resolved_cfg["experiment"]["target_scale"])
     y_train = y_train * outscale
     y_val = y_val * outscale
     y_test = y_test * outscale
 
     train_mean = y_train.mean(dim="time")
     train_std = y_train.std(dim="time")
+    train_mean.to_netcdf(output_paths["normalization_mean_file"])
+    train_std.to_netcdf(output_paths["normalization_std_file"])
+    logger.info("Saved training mean to %s", output_paths["normalization_mean_file"])
+    logger.info("Saved training std to %s", output_paths["normalization_std_file"])
     logger.info("Target zero-standard-deviation grid points: %s", count_zero_std_points(y_train, np))
     logger.info("Predictor zero-standard-deviation grid points: %s", count_zero_std_points(x_train, np))
 
@@ -292,24 +255,24 @@ def main() -> int:
     logger.info("Input channel count: %s", input_shape[-1])
     logger.info("Flattened target grid points: %s", output_shape)
 
-    optimizer = legacy.Adam(lr=raw_cfg["training"]["learning_rate"])
+    optimizer = legacy.Adam(lr=resolved_cfg["training"]["learning_rate"])
     simple_cnn = simple_conv(
-        layer_filters=raw_cfg["model"]["layer_filters"],
-        bn=raw_cfg["model"]["use_bn"],
-        padding=raw_cfg["model"]["padding"],
-        kernel_size=(raw_cfg["model"]["kernel_size"], raw_cfg["model"]["kernel_size"]),
-        pooling=raw_cfg["model"]["use_pooling"],
-        dense_layers=[raw_cfg["model"]["hidden_layer_dense"], output_shape],
-        dense_activation=raw_cfg["model"]["dense_activation"],
+        layer_filters=resolved_cfg["model"]["layer_filters"],
+        bn=resolved_cfg["model"]["use_bn"],
+        padding=resolved_cfg["model"]["padding"],
+        kernel_size=(resolved_cfg["model"]["kernel_size"], resolved_cfg["model"]["kernel_size"]),
+        pooling=resolved_cfg["model"]["use_pooling"],
+        dense_layers=[resolved_cfg["model"]["hidden_layer_dense"], output_shape],
+        dense_activation=resolved_cfg["model"]["dense_activation"],
         input_shape=input_shape,
-        dropout=raw_cfg["model"]["dropout"],
-        activation=raw_cfg["model"]["cnn_activation"],
+        dropout=resolved_cfg["model"]["dropout"],
+        activation=resolved_cfg["model"]["cnn_activation"],
     )
     simple_linear = simple_dense(
-        dense_layers=[raw_cfg["model"]["hidden_layer_dense"], output_shape],
-        dense_activation=raw_cfg["model"]["dense_activation"],
+        dense_layers=[resolved_cfg["model"]["hidden_layer_dense"], output_shape],
+        dense_activation=resolved_cfg["model"]["dense_activation"],
         input_shape=input_shape,
-        dropout=raw_cfg["model"]["dropout"],
+        dropout=resolved_cfg["model"]["dropout"],
     )
 
     x_train = x_train.values if isinstance(x_train, xr.DataArray) else x_train
@@ -319,7 +282,7 @@ def main() -> int:
     y_val_values = y_val.values if isinstance(y_val, xr.DataArray) else y_val
     y_val_values = y_val_values.to_array().values if isinstance(y_val_values, xr.Dataset) else y_val_values
 
-    model_type = raw_cfg["training"]["model_type"]
+    model_type = resolved_cfg["training"]["model_type"]
     if model_type == "linear":
         active_model = simple_linear
     elif model_type == "cnn":
@@ -328,26 +291,26 @@ def main() -> int:
         raise ValueError(f"Unsupported model_type '{model_type}'. Expected 'linear' or 'cnn'.")
 
     logger.info("Model type: %s", model_type)
-    logger.info("Loss: %s", raw_cfg["training"]["loss"])
-    logger.info("Metric: %s", raw_cfg["training"]["metrics"])
-    logger.info("Learning rate: %s", raw_cfg["training"]["learning_rate"])
-    logger.info("Batch size: %s", raw_cfg["training"]["batch_size"])
-    logger.info("Maximum epochs: %s", raw_cfg["training"]["epochs"])
-    logger.info("Model checkpoint path: %s", output_paths["model_weights_path"])
+    logger.info("Loss: %s", resolved_cfg["training"]["loss"])
+    logger.info("Metric: %s", resolved_cfg["training"]["metrics"])
+    logger.info("Learning rate: %s", resolved_cfg["training"]["learning_rate"])
+    logger.info("Batch size: %s", resolved_cfg["training"]["batch_size"])
+    logger.info("Maximum epochs: %s", resolved_cfg["training"]["epochs"])
+    logger.info("Model checkpoint path: %s", output_paths["model_file"])
 
-    history, trained_model = train_model(
+    history, _trained_model = train_model(
         active_model,
         x_train,
         y_train,
         x_val=x_val_values,
         y_val=y_val_values,
-        loss=raw_cfg["training"]["loss"],
-        epochs=raw_cfg["training"]["epochs"],
-        batch_size=raw_cfg["training"]["batch_size"],
+        loss=resolved_cfg["training"]["loss"],
+        epochs=resolved_cfg["training"]["epochs"],
+        batch_size=resolved_cfg["training"]["batch_size"],
         optimizer=optimizer,
-        model_weights_name=str(output_paths["model_weights_path"]),
-        logdir=str(output_paths["tensorboard_log_dir"]),
-        metrics=raw_cfg["training"]["metrics"],
+        model_weights_name=str(output_paths["model_file"]),
+        logdir=str(output_paths["tensorboard_dir"]),
+        metrics=resolved_cfg["training"]["metrics"],
     )
 
     logger.info("Training completed: yes")
@@ -356,7 +319,7 @@ def main() -> int:
         logger.info("Final training loss: %s", history.history["loss"][-1])
     if history.history.get("val_loss"):
         logger.info("Final validation loss: %s", history.history["val_loss"][-1])
-    logger.info("Best model path: %s", output_paths["model_weights_path"])
+    logger.info("Best model path: %s", output_paths["model_file"])
     return 0
 
 
@@ -367,4 +330,3 @@ if __name__ == "__main__":
     except Exception:
         logger.exception("Training failed")
         raise
-

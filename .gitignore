@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
 # Environments
 .env
@@ -8,10 +9,17 @@ __pycache__/
 env/
 venv/
 
-# Large Artifacts (Project Specific)
+# Runtime artifacts
+output/
+outputs/*
+!outputs/.gitkeep
+scripts/log_dir/
+slurm-*.out
 *.h5
+*.keras
 *.nc
-*.zip
+events.out.tfevents.*
 
-# OS files
+# Archives and OS files
+*.zip
 .DS_Store
